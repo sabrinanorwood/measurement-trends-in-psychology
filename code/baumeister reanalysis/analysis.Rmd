@@ -1,0 +1,129 @@
+---
+title: "Reanalysis of Baumeister et al.'s (2007) plotted data"
+author: "Ian Hussey"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: hide
+    highlight: haddock
+    theme: flatly
+    toc: yes
+    toc_float: yes
+---
+
+Baumeister et al. (2007) "Psychology as the Science of Self-Reports and Finger Movements: Whatever Happened to Actual Behavior?" report the proportion of studies that employed measures of actual behavior from 304 studies over time. They don't provide much quantitative analysis of it. I extracted their estimates using webplotdigitizer, and here I attempt to produce an estimate of prevalence (across years) and trend (between years) taking the error associated with each estimate into account.
+
+```{r, include=FALSE}
+
+knitr::opts_chunk$set(message = FALSE,
+                      warning = FALSE)
+
+```
+ 
+```{r}
+
+library(tidyverse)
+library(sjPlot)
+library(brms)
+library(emmeans)
+library(bayestestR)
+library(janitor)
+library(knitr)
+library(kableExtra)
+
+dat <- read_csv("baumeister.csv", col_names = c("year", "percent")) |>
+  # estimate SE
+  mutate(proportion = percent/100,
+         k = ceiling(304/5), # "In all, we coded 304 studies" across 5 time points
+         proportion_se = sqrt((proportion * (1 - proportion)) / k))
+# dput(dat)
+
+# # hardcoded to remove the need for external files
+# dat <- data.frame(year = c(1966, 1976, 1986, 1996, 2006), 
+#                   percent = c(45.16, 79.12, 26.16, 21.28, 15.76), 
+#                   proportion = c(0.4516, 0.7912, 0.2616, 0.2128, 0.1576), 
+#                   k = c(61, 61, 61, 61, 61), 
+#                   proportion_se = c(0.0637, 0.0520, 0.05627, 0.0524, 0.0466))
+
+```
+
+# Reproduce Baumeister's plot and add SEs and linear trend
+
+```{r}
+
+ggplot(data = dat, aes(x = year, y = proportion)) +
+  geom_linerange(aes(ymin = proportion - proportion_se * 1.96, ymax = proportion + proportion_se * 1.96)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE, color = "black", size = 0.5) + # no error bars as this ignores the error associated with each data point
+  scale_x_continuous(breaks = c(1966, 1976, 1986, 1996, 2006)) +
+  coord_cartesian(ylim = c(0, 1), xlim = c(1966, 2006)) +
+  theme_linedraw() +
+  ylab("Proportion of studies") +
+  xlab("Year") +
+  ggtitle("")
+
+```
+
+# Model prevalence and trend
+
+Model the SEs to try to produce better estimates. However, brms::se() can only be used with gaussian models, so we're stuck with linear probability models.
+
+```{r}
+
+meta_model_trend <- brm(
+  formula = proportion | se(proportion_se) ~ 1 + year,
+  data = dat,
+  family = gaussian(),
+  # weak priors
+  prior = c(
+    prior(normal(0, 10), class = "Intercept"),  
+    prior(normal(0, 1), class = "b")  
+  ),
+  iter = 2000, 
+  warmup = 1000,  
+  chains = 4, 
+  cores = 4  
+)
+
+# trend (b_year estimate)
+res <- posterior_summary(meta_model_trend) |>
+  as.data.frame() |>
+  rownames_to_column(var = "parameter")
+
+left_join(
+  res |>
+    select(parameter, estimate = Estimate, ci_lower = Q2.5, ci_upper = Q97.5) |>
+    filter(parameter %in% c("b_Intercept", "b_year")) |>
+    mutate_if(is.numeric, janitor::round_half_up, digits = 5),
+  meta_model_trend |>
+    p_direction() |>
+    mutate(p = pd_to_p(pd),
+           p = ifelse(p < .001, "<.001", p)) |>
+    select(parameter = Parameter, p),
+  by = "parameter"
+) |>
+  mutate_if(is.numeric, janitor::round_half_up, digits = 3) |>
+  kable() |>
+  kable_classic(full_width = FALSE)
+
+# prevalence (middle year provides overall prevalence estimate)
+emms_trend <- emmeans(meta_model_trend, ~ year)
+emms_df_trend <- as.data.frame(emms_trend)
+
+emms_df_trend |>
+  select(prevalence = emmean, ci_lower = lower.HPD, ci_upper = upper.HPD) |>
+  mutate_if(is.numeric, janitor::round_half_up, digits = 3) |>
+  kable() |>
+  kable_classic(full_width = FALSE)
+
+```
+
+# Session info
+
+```{r}
+
+sessionInfo()
+
+```
+
+
