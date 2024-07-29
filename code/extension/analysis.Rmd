@@ -16,6 +16,8 @@ output:
 
 - separate models for other DVs or one combined model? if combined, can i do direct comparisons between them?
 - add pairwise comparisons for subfields?
+- think about priors more
+- think about model diagnostics more
 
 ```{r setup, include=FALSE}
 
@@ -119,7 +121,7 @@ data_simulated |>
   summarize(mean_uses_self_reports = mean(uses_self_reports),
             mean_uses_direct_behavioral_measures = mean(uses_direct_behavioral_measures),
             mean_uses_behavioral_proxy = mean(uses_behavioral_proxy)) |>
-  mutate_all(round_half_up, digits = 2) |>
+  mutate_all(round_half_up, digits = 3) |>
   kable() |>
   kable_classic(full_width = FALSE)
 
@@ -128,7 +130,7 @@ data_simulated |>
   summarize(mean_uses_self_reports = mean(uses_self_reports),
             mean_uses_direct_behavioral_measures = mean(uses_direct_behavioral_measures),
             mean_uses_behavioral_proxy = mean(uses_behavioral_proxy)) |>
-  mutate_if(is.numeric, round_half_up, digits = 2) |>
+  mutate_if(is.numeric, round_half_up, digits = 3) |>
   kable() |>
   kable_classic(full_width = FALSE)
 
@@ -186,7 +188,7 @@ res_prevalence_field <- fit_uses_self_reports |>
          prevalence_ci_upper = upper.HPD)
 
 # res_prevalence_field |>
-#   mutate_if(is.numeric, round_half_up, digits = 2)
+#   mutate_if(is.numeric, round_half_up, digits = 3)
 
 
 # # hypothetical typical new group
@@ -202,7 +204,7 @@ res_prevalence_field <- fit_uses_self_reports |>
 #   summary()
 # 
 # res_draws_prevalence |>
-#   mutate_if(is.numeric, round_half_up, digits = 2)
+#   mutate_if(is.numeric, round_half_up, digits = 3)
 
 
 # # existing levels of each level and journal
@@ -217,7 +219,7 @@ res_prevalence_field <- fit_uses_self_reports |>
 #   summary()
 #
 # res_draws_prevalence |>
-#   mutate_if(is.numeric, round_half_up, digits = 2)
+#   mutate_if(is.numeric, round_half_up, digits = 3)
 
 
 # # new levels of just the subfield
@@ -232,7 +234,7 @@ res_prevalence_field <- fit_uses_self_reports |>
 #   summary()
 #
 # res_draws_prevalence |>
-#   mutate_if(is.numeric, round_half_up, digits = 2)
+#   mutate_if(is.numeric, round_half_up, digits = 3)
 
 
 # estimate prevalence for either an existing subfield and journal, or an existing subfield and hypothetical journal, or hypothetical subfield and journal
@@ -334,7 +336,7 @@ res_prevalence_journals <-
   
 
 # res_prevalence_journals |>
-#   mutate_if(is.numeric, round_half_up, digits = 2)
+#   mutate_if(is.numeric, round_half_up, digits = 3)
 
 
 # a hypothetical journal in existing subfields 
@@ -350,7 +352,7 @@ res_prevalence_subfields <-
   unnest(cols = c(res))
 
 # res_prevalence_subfields |>
-#   mutate_if(is.numeric, round_half_up, digits = 2)
+#   mutate_if(is.numeric, round_half_up, digits = 3)
 
 
 # # a hypothetical subfield and journal
@@ -362,7 +364,7 @@ res_prevalence_subfields <-
 #                  re_level = "field (hypothetical subfield and journal)")
 
 # res_prevalence_field_hypothetical |>
-#   mutate_if(is.numeric, round_half_up, digits = 2)
+#   mutate_if(is.numeric, round_half_up, digits = 3)
 
 
 res_prevalence <- 
@@ -433,7 +435,7 @@ res_prevalence <-
 #   dput()
 
 res_prevalence |>
-  mutate_if(is.numeric, round_half_up, digits = 2) |>
+  mutate_if(is.numeric, round_half_up, digits = 3) |>
   kable() |>
   kable_classic(full_width = FALSE)
 
@@ -471,7 +473,7 @@ res_trend_field <- fit_uses_self_reports |>
          trend_ci_upper = upper.HPD)
 
 # res_trend_field |>
-#   mutate_if(is.numeric, round_half_up, digits = 2)
+#   mutate_if(is.numeric, round_half_up, digits = 3)
 
 
 # # hypothetical typical new group
@@ -491,7 +493,7 @@ res_trend_field <- fit_uses_self_reports |>
 #          trend_ci_upper = upper.HPD)
 # 
 # res_draws_trend |>
-#   mutate_if(is.numeric, round_half_up, digits = 2)
+#   mutate_if(is.numeric, round_half_up, digits = 3)
 
 
 # existing levels of each level and journal
@@ -510,7 +512,7 @@ res_trend_field <- fit_uses_self_reports |>
 #          trend_ci_upper = upper.HPD)
 # 
 # res_draws_trend |>
-#   mutate_if(is.numeric, round_half_up, digits = 2)
+#   mutate_if(is.numeric, round_half_up, digits = 3)
 
 # # new levels of a specific subfield and hypothetical new journal
 # res_draws_prevalence <- fit_uses_self_reports |>
@@ -528,7 +530,7 @@ res_trend_field <- fit_uses_self_reports |>
 #          trend_ci_upper = upper.HPD)
 # 
 # res_draws_trend |>
-#   mutate_if(is.numeric, round_half_up, digits = 2)
+#   mutate_if(is.numeric, round_half_up, digits = 3)
 
 # estimate trend for either an existing subfield and journal, or an existing subfield and hypothetical journal, or hypothetical subfield and journal
 est_trend <- function(fit, subfield, journal, re_level){
@@ -627,7 +629,7 @@ res_trend_journals <-
   )
 
 # res_trend_journals |>
-#   mutate_if(is.numeric, round_half_up, digits = 2)
+#   mutate_if(is.numeric, round_half_up, digits = 3)
 
 
 # a hypothetical journal in existing subfields 
@@ -644,7 +646,7 @@ res_trend_subfields <-
 
 
 # res_trend_subfields |>
-#   mutate_if(is.numeric, round_half_up, digits = 2)
+#   mutate_if(is.numeric, round_half_up, digits = 3)
 
 
 # # a hypothetical subfield and journal
@@ -656,7 +658,7 @@ res_trend_subfields <-
 #             re_level = "field (hypothetical subfield and journal)")
 
 # res_trend_field_hypothetical |>
-#   mutate_if(is.numeric, round_half_up, digits = 2)
+#   mutate_if(is.numeric, round_half_up, digits = 3)
 
 
 res_trends <- 
@@ -730,7 +732,7 @@ res_trends <-
 #   dput()
 
 res_trends |>
-  mutate_if(is.numeric, round_half_up, digits = 2) |>
+  mutate_if(is.numeric, round_half_up, digits = 3) |>
   kable() |>
   kable_classic(full_width = FALSE)
 
