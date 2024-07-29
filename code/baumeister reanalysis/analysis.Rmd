@@ -56,11 +56,15 @@ ggplot(data = dat, aes(x = year, y = proportion)) +
   geom_point() +
   geom_smooth(method = "lm", se = FALSE, color = "black", size = 0.5) + # no error bars as this ignores the error associated with each data point
   scale_x_continuous(breaks = c(1966, 1976, 1986, 1996, 2006)) +
+  scale_y_continuous(labels = scales::label_percent()) +
   coord_cartesian(ylim = c(0, 1), xlim = c(1966, 2006)) +
   theme_linedraw() +
-  ylab("Proportion of studies") +
+  ylab("Studies measuring behavior") +
   xlab("Year") +
-  ggtitle("")
+  ggtitle("") +
+  theme(panel.grid.minor = element_blank())
+
+ggsave("baumeister figure 1 recreated 2.pdf", width = 2.75, height = 2.75)
 
 ```
 
