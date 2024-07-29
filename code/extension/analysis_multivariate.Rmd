@@ -182,14 +182,6 @@ https://www.andrewheiss.com/blog/2021/11/10/ame-bayes-re-guide/
 # master vectors
 outcome_measures <- c("usesselfreports", "usesdirectbehavioralmeasures")
 
-# subfields <- data_simulated_centered |>
-#   distinct(subfield, journal) |>
-#   pull(subfield)
-# 
-# journals <- data_simulated_centered |>
-#   filter(subfield == subfield) |>
-#   distinct(journal) |>
-#   pull(journal)
 
 
 # extractions
@@ -339,6 +331,7 @@ res_prevalence <-
   label = fct_rev(label)) |>
   mutate(outcome = case_when(outcome == "usesdirectbehavioralmeasures" ~ "Behavioral measure",
                              outcome == "usesselfreports" ~ "Self-report measure",
+                             # \TODO others needed here
                              TRUE ~ outcome)) |>
   select(outcome, label, re_level, subfield, journal, 
          prevalence_estimate, prevalence_ci_lower, prevalence_ci_upper)
