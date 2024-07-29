@@ -23,7 +23,6 @@ knitr::opts_chunk$set(message = FALSE,
 ```{r}
 
 library(tidyverse)
-library(sjPlot)
 library(brms)
 library(emmeans)
 library(bayestestR)
@@ -35,15 +34,8 @@ dat <- read_csv("baumeister.csv", col_names = c("year", "percent")) |>
   # estimate SE
   mutate(proportion = percent/100,
          k = ceiling(304/5), # "In all, we coded 304 studies" across 5 time points
-         proportion_se = sqrt((proportion * (1 - proportion)) / k))
-# dput(dat)
-
-# # hardcoded to remove the need for external files
-# dat <- data.frame(year = c(1966, 1976, 1986, 1996, 2006), 
-#                   percent = c(45.16, 79.12, 26.16, 21.28, 15.76), 
-#                   proportion = c(0.4516, 0.7912, 0.2616, 0.2128, 0.1576), 
-#                   k = c(61, 61, 61, 61, 61), 
-#                   proportion_se = c(0.0637, 0.0520, 0.05627, 0.0524, 0.0466))
+         proportion_se = sqrt((proportion * (1 - proportion)) / k),
+         year_centered = year - 1986)
 
 ```
 
@@ -74,8 +66,10 @@ Model the SEs to try to produce better estimates. However, brms::se() can only b
 
 ```{r}
 
-meta_model_trend <- brm(
-  formula = proportion | se(proportion_se) ~ 1 + year,
+set.seed(42)
+
+fit_baumeister <- brm(
+  formula = proportion | se(proportion_se) ~ 1 + year_centered,
   data = dat,
   family = gaussian(),
   # weak priors
@@ -89,33 +83,34 @@ meta_model_trend <- brm(
   cores = 4  
 )
 
-# trend (b_year estimate)
-res <- posterior_summary(meta_model_trend) |>
-  as.data.frame() |>
-  rownames_to_column(var = "parameter")
 
-left_join(
-  res |>
-    select(parameter, estimate = Estimate, ci_lower = Q2.5, ci_upper = Q97.5) |>
-    filter(parameter %in% c("b_Intercept", "b_year")) |>
-    mutate_if(is.numeric, janitor::round_half_up, digits = 5),
-  meta_model_trend |>
-    p_direction() |>
-    mutate(p = pd_to_p(pd),
-           p = ifelse(p < .001, "<.001", p)) |>
-    select(parameter = Parameter, p),
-  by = "parameter"
-) |>
+res_prevalence_field <- fit_baumeister |>
+  emmeans(specs = ~ 1,
+          at = list(year_centered = 0),
+          epred = TRUE) |>
+  summary() |>
+  select(prevalence_estimate = emmean,
+         prevalence_ci_lower = lower.HPD,
+         prevalence_ci_upper = upper.HPD)
+
+res_prevalence_field |>
   mutate_if(is.numeric, janitor::round_half_up, digits = 3) |>
   kable() |>
   kable_classic(full_width = FALSE)
 
-# prevalence (middle year provides overall prevalence estimate)
-emms_trend <- emmeans(meta_model_trend, ~ year)
-emms_df_trend <- as.data.frame(emms_trend)
 
-emms_df_trend |>
-  select(prevalence = emmean, ci_lower = lower.HPD, ci_upper = upper.HPD) |>
+
+res_trend_field <- fit_baumeister |>
+  emtrends(specs = ~ year_centered,
+           var = "year_centered",
+           at = list(year_centered = 0),
+           epred = TRUE) |>
+  summary() |>
+  select(trend_estimate = year_centered.trend,
+         trend_ci_lower = lower.HPD,
+         trend_ci_upper = upper.HPD)
+
+res_trend_field |>
   mutate_if(is.numeric, janitor::round_half_up, digits = 3) |>
   kable() |>
   kable_classic(full_width = FALSE)
