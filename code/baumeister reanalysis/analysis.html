@@ -1887,7 +1887,7 @@ border-radius: 0px;
 <h1 class="title toc-ignore">Reanalysis of Baumeister et al.’s (2007)
 plotted data</h1>
 <h4 class="author">Ian Hussey</h4>
-<h4 class="date">29 July, 2024</h4>
+<h4 class="date">07 August, 2024</h4>
 
 </div>
 
@@ -1943,7 +1943,7 @@ probability models.</p>
 <span id="cb4-6"><a href="#cb4-6" tabindex="-1"></a>  <span class="at">family =</span> <span class="fu">gaussian</span>(),</span>
 <span id="cb4-7"><a href="#cb4-7" tabindex="-1"></a>  <span class="co"># weak priors</span></span>
 <span id="cb4-8"><a href="#cb4-8" tabindex="-1"></a>  <span class="at">prior =</span> <span class="fu">c</span>(</span>
-<span id="cb4-9"><a href="#cb4-9" tabindex="-1"></a>    <span class="fu">prior</span>(<span class="fu">normal</span>(<span class="dv">0</span>, <span class="dv">10</span>), <span class="at">class =</span> <span class="st">&quot;Intercept&quot;</span>),  </span>
+<span id="cb4-9"><a href="#cb4-9" tabindex="-1"></a>    <span class="fu">prior</span>(<span class="fu">normal</span>(<span class="dv">0</span>, <span class="dv">1</span>), <span class="at">class =</span> <span class="st">&quot;Intercept&quot;</span>),  </span>
 <span id="cb4-10"><a href="#cb4-10" tabindex="-1"></a>    <span class="fu">prior</span>(<span class="fu">normal</span>(<span class="dv">0</span>, <span class="dv">1</span>), <span class="at">class =</span> <span class="st">&quot;b&quot;</span>)  </span>
 <span id="cb4-11"><a href="#cb4-11" tabindex="-1"></a>  ),</span>
 <span id="cb4-12"><a href="#cb4-12" tabindex="-1"></a>  <span class="at">iter =</span> <span class="dv">2000</span>, </span>
@@ -1994,13 +1994,13 @@ prevalence_ci_upper
 <tbody>
 <tr>
 <td style="text-align:right;">
-0.393
+0.394
 </td>
 <td style="text-align:right;">
-0.347
+0.348
 </td>
 <td style="text-align:right;">
-0.444
+0.44
 </td>
 </tr>
 </tbody>
@@ -2042,7 +2042,7 @@ trend_ci_upper
 -0.016
 </td>
 <td style="text-align:right;">
--0.009
+-0.01
 </td>
 </tr>
 </tbody>
@@ -2069,43 +2069,43 @@ trend_ci_upper
 ## [1] stats     graphics  grDevices utils     datasets  methods   base     
 ## 
 ## other attached packages:
-##  [1] kableExtra_1.4.0  knitr_1.45        janitor_2.2.0     bayestestR_0.13.2
-##  [5] emmeans_1.10.0    brms_2.21.0       Rcpp_1.0.12       lubridate_1.9.3  
+##  [1] kableExtra_1.4.0  knitr_1.48        janitor_2.2.0     bayestestR_0.13.2
+##  [5] emmeans_1.10.2    brms_2.21.0       Rcpp_1.0.13       lubridate_1.9.3  
 ##  [9] forcats_1.0.0     stringr_1.5.1     dplyr_1.1.4       purrr_1.0.2      
 ## [13] readr_2.1.5       tidyr_1.3.1       tibble_3.2.1      ggplot2_3.5.1    
 ## [17] tidyverse_2.0.0  
 ## 
 ## loaded via a namespace (and not attached):
 ##  [1] gridExtra_2.3        inline_0.3.19        sandwich_3.1-0      
-##  [4] rlang_1.1.3          magrittr_2.0.3       multcomp_1.4-25     
+##  [4] rlang_1.1.4          magrittr_2.0.3       multcomp_1.4-25     
 ##  [7] snakecase_0.11.1     matrixStats_1.0.0    compiler_4.3.3      
 ## [10] mgcv_1.9-1           loo_2.6.0            systemfonts_1.0.6   
 ## [13] callr_3.7.6          vctrs_0.6.5          pkgconfig_2.0.3     
-## [16] crayon_1.5.2         fastmap_1.1.1        backports_1.4.1     
-## [19] labeling_0.4.3       utf8_1.2.4           rmarkdown_2.26      
+## [16] crayon_1.5.3         fastmap_1.2.0        backports_1.5.0     
+## [19] labeling_0.4.3       utf8_1.2.4           rmarkdown_2.27      
 ## [22] tzdb_0.4.0           ps_1.7.6             ragg_1.3.0          
-## [25] bit_4.0.5            xfun_0.43            cachem_1.0.8        
-## [28] jsonlite_1.8.8       highr_0.10           parallel_4.3.3      
-## [31] R6_2.5.1             bslib_0.7.0          stringi_1.8.4       
-## [34] StanHeaders_2.32.6   jquerylib_0.1.4      estimability_1.5    
+## [25] bit_4.0.5            xfun_0.46            cachem_1.1.0        
+## [28] jsonlite_1.8.8       highr_0.11           parallel_4.3.3      
+## [31] R6_2.5.1             bslib_0.8.0          stringi_1.8.4       
+## [34] StanHeaders_2.32.6   jquerylib_0.1.4      estimability_1.5.1  
 ## [37] rstan_2.32.6         zoo_1.8-12           bayesplot_1.10.0    
 ## [40] Matrix_1.6-5         splines_4.3.3        timechange_0.3.0    
 ## [43] tidyselect_1.2.1     rstudioapi_0.16.0    abind_1.4-5         
-## [46] yaml_2.3.8           codetools_0.2-20     curl_5.2.1          
+## [46] yaml_2.3.10          codetools_0.2-20     curl_5.2.1          
 ## [49] processx_3.8.4       pkgbuild_1.4.4       lattice_0.22-6      
-## [52] withr_3.0.0          bridgesampling_1.1-2 posterior_1.4.1     
-## [55] coda_0.19-4.1        evaluate_0.23        survival_3.5-8      
+## [52] withr_3.0.1          bridgesampling_1.1-2 posterior_1.4.1     
+## [55] coda_0.19-4.1        evaluate_0.24.0      survival_3.5-8      
 ## [58] RcppParallel_5.1.7   xml2_1.3.6           pillar_1.9.0        
 ## [61] tensorA_0.36.2       checkmate_2.3.1      stats4_4.3.3        
 ## [64] insight_0.19.10      distributional_0.4.0 generics_0.1.3      
 ## [67] vroom_1.6.5          hms_1.1.3            rstantools_2.4.0    
 ## [70] munsell_0.5.1        scales_1.3.0         xtable_1.8-4        
-## [73] glue_1.7.0           tools_4.3.3          mvtnorm_1.2-4       
-## [76] grid_4.3.3           QuickJSR_1.1.3       colorspace_2.1-0    
-## [79] nlme_3.1-164         cli_3.6.2            textshaping_0.3.7   
+## [73] glue_1.7.0           tools_4.3.3          mvtnorm_1.2-5       
+## [76] grid_4.3.3           QuickJSR_1.1.3       colorspace_2.1-1    
+## [79] nlme_3.1-164         cli_3.6.3            textshaping_0.3.7   
 ## [82] fansi_1.0.6          viridisLite_0.4.2    svglite_2.1.3       
 ## [85] Brobdingnag_1.2-9    V8_4.3.3             gtable_0.3.5        
-## [88] sass_0.4.9           digest_0.6.35        TH.data_1.1-2       
+## [88] sass_0.4.9           digest_0.6.36        TH.data_1.1-2       
 ## [91] farver_2.1.2         htmltools_0.5.8.1    lifecycle_1.0.4     
 ## [94] bit64_4.0.5          MASS_7.3-60.0.1</code></pre>
 </div>
