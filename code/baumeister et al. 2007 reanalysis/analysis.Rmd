@@ -30,7 +30,10 @@ library(janitor)
 library(knitr)
 library(kableExtra)
 
-dat <- read_csv("baumeister.csv", col_names = c("year", "percent")) |>
+dir.create("plots")
+dir.create("models")
+
+dat <- read_csv("../../data/baumeister et al. 2007/baumeister.csv", col_names = c("year", "percent")) |>
   # estimate SE
   mutate(proportion = percent/100,
          k = ceiling(304/5), # "In all, we coded 304 studies" across 5 time points
@@ -56,7 +59,17 @@ ggplot(data = dat, aes(x = year, y = proportion)) +
   ggtitle("") +
   theme(panel.grid.minor = element_blank())
 
-ggsave("baumeister figure 1 recreated 2.pdf", width = 2.75, height = 2.75)
+
+ggsave("plots/baumeister figure 1 recreated.pdf", 
+       device = "pdf",
+       width = 3.5, 
+       height = 3.5)
+
+ggsave("plots/baumeister figure 1 recreated.png", 
+       device = "png",
+       dpi = 600,
+       width = 3.5, 
+       height = 3.5)
 
 ```
 
@@ -80,7 +93,8 @@ fit_baumeister <- brm(
   iter = 2000, 
   warmup = 1000,  
   chains = 4, 
-  cores = 4  
+  cores = parallel::detectCores(),
+  file = "models/fit_baumeister"
 )
 
 
