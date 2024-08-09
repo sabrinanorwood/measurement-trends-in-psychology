@@ -1,0 +1,105 @@
+
+```{r fig.height=6, fig.width=10}
+
+# res_prevalence |>
+#   filter(re_level != "journals") |>
+#   ggplot(aes(prevalence_estimate, label, color = outcome)) +
+#   geom_rect(aes(xmin = 0.00, xmax = 0.05, ymin = -Inf, ymax = Inf, color = NULL),
+#             fill = "grey71", alpha = 0.05) +
+#   geom_rect(aes(xmin = 0.05, xmax = 0.10, ymin = -Inf, ymax = Inf, color = NULL),
+#             fill = "grey73", alpha = 0.05) +
+#   geom_rect(aes(xmin = 0.10, xmax = 0.25, ymin = -Inf, ymax = Inf, color = NULL),
+#             fill = "grey80", alpha = 0.05) +
+#   geom_rect(aes(xmin = 0.25, xmax = 0.50, ymin = -Inf, ymax = Inf, color = NULL),
+#             fill = "grey90") +
+#   geom_rect(aes(xmin = 0.50, xmax = 1.00, ymin = -Inf, ymax = Inf, color = NULL),
+#             fill = "grey95", alpha = 0.05) +
+#   geom_linerangeh(aes(xmin = prevalence_ci_lower, xmax = prevalence_ci_upper), position = position_dodge(width = .7)) +
+#   geom_point(position = position_dodge(width = .7)) +
+#   coord_cartesian(xlim = c(0, 1)) +
+#   theme_linedraw() + 
+#   theme(panel.grid.major = element_blank(), # Remove major grid lines
+#         panel.grid.minor = element_blank(),
+#         axis.text.x = element_text(hjust = 1, angle = 45)) +  # Remove minor grid lines
+#   ylab("") +
+#   xlab("Prevalence") +
+#   #scale_x_continuous(labels = scales::label_percent(), breaks = c(0, 0.05, 0.1, 0.25, 0.5, 1)) +
+#   scale_x_continuous(labels = c("0%", "Rare", "5%", "Uncommon", "10%", "Occasional", "25%", "Frequent", "50%", "Common", "100%"),
+#                      breaks = c(0, 0.025, 0.05, 0.075, 0.10, 0.175, 0.25, 0.375, 0.50, 0.75, 1),
+#                      minor_breaks = NULL) +
+#   guides(color = guide_legend(title = "Measure type",
+#                               reverse = TRUE))
+
+
+res_prevalence |>
+  filter(re_level != "journals") |>
+  ggplot(aes(prevalence_estimate, label, color = outcome)) +
+  geom_rect(aes(xmin = 0.00, xmax = 0.05, ymin = -Inf, ymax = Inf, color = NULL),
+            fill = "grey71", alpha = 0.05) +
+  geom_rect(aes(xmin = 0.05, xmax = 0.10, ymin = -Inf, ymax = Inf, color = NULL),
+            fill = "grey73", alpha = 0.05) +
+  geom_rect(aes(xmin = 0.10, xmax = 0.25, ymin = -Inf, ymax = Inf, color = NULL),
+            fill = "grey80", alpha = 0.05) +
+  geom_rect(aes(xmin = 0.25, xmax = 0.50, ymin = -Inf, ymax = Inf, color = NULL),
+            fill = "grey90") +
+  geom_rect(aes(xmin = 0.50, xmax = 1.00, ymin = -Inf, ymax = Inf, color = NULL),
+            fill = "grey95", alpha = 0.05) +
+  annotate("text", x = 0.0250, y = "Clinical", label = "Rare",       size = 4, color = "grey30", angle = 90) +
+  annotate("text", x = 0.0725, y = "Clinical", label = "Uncommon",   size = 4, color = "grey40", angle = 90) +
+  annotate("text", x = 0.1750, y = "Clinical", label = "Occasional", size = 4, color = "grey50", angle = 90) +
+  annotate("text", x = 0.3750, y = "Clinical", label = "Common",     size = 4, color = "grey60", angle = 90) +
+  annotate("text", x = 0.7500, y = "Clinical", label = "Frequent",   size = 4, color = "grey65", angle = 90) +
+  geom_linerangeh(aes(xmin = prevalence_ci_lower, xmax = prevalence_ci_upper), position = position_dodge(width = .7)) +
+  geom_point(position = position_dodge(width = .7)) +
+  coord_cartesian(xlim = c(0, 1)) +
+  theme_linedraw() + 
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank()) +  
+  ylab("") +
+  xlab("Prevalence") +
+  #scale_x_continuous(labels = scales::label_percent(), breaks = c(0, 0.05, 0.1, 0.25, 0.5, 1)) +
+  scale_x_continuous(labels = c("0%", "5%", "10%", "25%", "50%", "100%"),
+                     breaks = c(0, 0.05, 0.10, 0.25, 0.50, 1),
+                     minor_breaks = NULL,
+                     expand = c(0,0)) +
+  guides(color = guide_legend(title = "Measure type",
+                              reverse = TRUE))
+
+```
+
+
+
+```{r fig.height=5, fig.width=12}
+
+p_prevalence_subfields1 <- res_prevalence |>
+  filter(re_level != "journals") |>
+  ggplot(aes(prevalence_estimate, label, color = outcome)) +
+  geom_linerangeh(aes(xmin = prevalence_ci_lower, xmax = prevalence_ci_upper), position = position_dodge(width = .8)) +
+  geom_point(position = position_dodge(width = .8)) +
+  coord_cartesian(xlim = c(0, 1)) +
+  theme_linedraw() +
+  ylab("") +
+  xlab("Prevalence") +
+  #scale_x_continuous(labels = scales::label_percent(), breaks = breaks_pretty(n = 10)) +
+  scale_x_continuous(labels = c("0%", "Rare", "5%", "Uncommon", "10%", "Occasional", "25%", "Common", "50%", "Frequent", "100%"),
+                     breaks = c(0, 0.025, 0.05, 0.075, 0.10, 0.175, 0.25, 0.375, 0.50, 0.75, 1),
+                     minor_breaks = NULL) +
+  # scale_x_continuous(labels = c("0%\n(Rare)", "5%\n(Uncommon)", "10%\n(Occasional)", "25%\n(Common)", "50%\n(Frequent)", "75%", "100%"),
+  #                    breaks = c(0, 0.05, 0.10, 0.25, 0.50, 0.75, 1),
+  #                    minor_breaks = NULL) +
+  # scale_x_continuous(labels = c("(Rare) 0%", "(Uncommon) 5%", "(Occasional) 10%", "(Common) 25%", "(Frequent) 50%", "75%", "100%"),
+  #                    breaks = c(0, 0.05, 0.10, 0.25, 0.50, 0.75, 1),
+  #                    minor_breaks = NULL) +
+  # scale_x_continuous(labels = c("0%", "(Rare) 5%", "(Uncommon) 10%", "(Occasional) 25%", "(Common) 50%", "(Frequent) 75%", "100%"),
+  #                    breaks = c(0, 0.05, 0.10, 0.25, 0.50, 0.75, 1),
+  #                    minor_breaks = NULL) +
+  guides(color = guide_legend(title = "Measure type",
+                              reverse = TRUE)) +
+  theme(axis.text.x = element_text(hjust = 1, angle = 45))
+
+p_prevalence_subfields1
+p_prevalence_subfields2
+
+quicksave("p_prevalence_subfields", 9, 4.5)
+
+```
