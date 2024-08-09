@@ -1,0 +1,90 @@
+---
+title: "Reanalysis of association between self-reported vs behavioral measures of sleep quality and duration"
+author: "Ian Hussey"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: hide
+    highlight: haddock
+    theme: flatly
+    toc: yes
+    toc_float: yes
+---
+
+```{r, include=FALSE}
+
+knitr::opts_chunk$set(message = FALSE,
+                      warning = FALSE)
+
+```
+
+# Dependencies and data
+
+Sources:
+
+- Cudney et al.'s (2022) review doi https://doi.org/10.5664/jcsm.9708 - correlations between single time point self-report measures and behavioral measures of sleep (Table 1)
+- Jackson et al. (2020) doi https://doi.org/10.1093/sleep/zsz246 - correlations between single time point self-report measures and behavioral measures of sleep (abstract)
+
+Note that data was taken at face value. No checking for extraction accuracy or completeness, no tests of publication bias, etc. 
+ 
+```{r}
+
+library(tidyverse)
+library(brms)
+library(emmeans)
+library(janitor)
+library(knitr)
+library(kableExtra)
+
+dat <- read_csv("../../data/jackson et al. 2020 and cudney et al. 2022/jackson_cudney.csv") |>
+  mutate(r_corrected_se = sqrt((1 - r_corrected^2) / (n - 2)))
+
+```
+
+# Weighted averages
+
+```{r}
+
+dat_cudney <- dat |>
+  filter(secondary_source == "Cudney et al, 2022")
+
+n_cudney <- dat_cudney |>
+  distinct(source, .keep_all = TRUE) |>
+  summarize(total_n = sum(n)) |>
+  pull(total_n)
+
+k_cudney <- dat_cudney |>
+  distinct(source) |>
+  count(name = "k") |>
+  pull(k)
+
+weighted_r_cudney <- weighted.mean(x = dat_cudney$r_corrected, w = dat_cudney$n) |>
+  janitor::round_half_up(digits = 2)
+
+
+dat_jackson <- dat |>
+  filter(secondary_source == "Jackson et al, 2020")
+
+n_jackson <- dat_jackson |>
+  distinct(source, .keep_all = TRUE) |>
+  summarize(total_n = sum(n)) |>
+  pull(total_n)
+
+weighted_r_jackson <- weighted.mean(x = dat_jackson$r_corrected, w = dat_jackson$n) |>
+  janitor::round_half_up(digits = 2)
+
+```
+
+Cudney et al. (2022): Weighted *r* = `r weighted_r_cudney`, n = `r n_cudney`, k = `r k_cudney`.
+
+Jackson et al (2020): *r* = `r weighted_r_jackson`, n = `r n_jackson`
+
+# Session info
+
+```{r}
+
+sessionInfo()
+
+```
+
+
