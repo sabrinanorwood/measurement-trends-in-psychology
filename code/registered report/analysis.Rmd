@@ -55,6 +55,21 @@ library(ggcorrplot)
 
 
 dir.create("models")
+dir.create("plots")
+
+# function to save ggplots to disk
+quicksave <- function(name, width, height){
+  ggsave(paste0("plots/", name, ".pdf"), 
+         device = "pdf",
+         width = width, 
+         height = height)
+  
+  ggsave(paste0("plots/", name, ".png"), 
+         device = "png",
+         dpi = 600,
+         width = width, 
+         height = height)
+}
 
 ```
 
@@ -127,8 +142,8 @@ data_simulated <-
 
 
 # save for reproducibility
-if(!file.exists("models/data_simulated.csv")){
-  write_csv(data_simulated, "models/data_simulated.csv")
+if(!file.exists("../../data/registered report/simulated/data_simulated.csv")){
+  write_csv(data_simulated, "../../data/registered report/simulated/data_simulated.csv")
 }
 
 ```
@@ -308,6 +323,8 @@ p_cors_field_intercept <- var_cors_field_intercept |>
 
 p_cors_field_intercept
 
+quicksave("p_cors_field_intercept", 6, 6)
+
 ```
 
 #### Trend
@@ -342,6 +359,8 @@ p_cors_field_slope <- var_cors_field_slope |>
 
 p_cors_field_slope
 
+quicksave("p_cors_field_slope", 6, 6)
+
 ```
 
 ### Journals
@@ -361,7 +380,7 @@ var_cors_journal_intercept <- var_cors_journal |>
   select(var, contains("Intercept") & contains("Estimate.")) |>
   mutate_if(is.numeric, round_half_up, digits = 2) |>
   mutate(var = str_remove(var, "_Intercept")) %>%
-  rename_with(~ str_remove(., "Estimate.uses")) %>%
+  rename_with(~ str_remove(., "Estimate.")) %>%
   rename_with(~ str_remove(., "_Intercept"))
 
 var_cors_journal_intercept |>
@@ -561,46 +580,43 @@ res_prevalence |>
 
 #### Field + Subfields
 
-```{r fig.height=4.5, fig.width=9}
+```{r fig.height=6, fig.width=11}
 
-# p_prevalence_subfields <- res_prevalence |>
-#   filter(re_level != "journals") |>
-#   ggplot(aes(prevalence_estimate, label, color = outcome)) +
-#   # geom_rect(aes(xmin = 0.00, xmax = 0.05, ymin = -Inf, ymax = Inf, color = NULL),
-#   #           fill = "grey70", alpha = 0.05) +
-#   # geom_rect(aes(xmin = 0.05, xmax = 0.10, ymin = -Inf, ymax = Inf, color = NULL),
-#   #           fill = "grey77", alpha = 0.05) +
-#   # geom_rect(aes(xmin = 0.10, xmax = 0.25, ymin = -Inf, ymax = Inf, color = NULL),
-#   #           fill = "grey85", alpha = 0.05) +
-#   # geom_rect(aes(xmin = 0.25, xmax = 0.50, ymin = -Inf, ymax = Inf, color = NULL),
-#   #           fill = "grey92", alpha = 0.05) +
-#   # geom_rect(aes(xmin = 0.50, xmax = 1.00, ymin = -Inf, ymax = Inf, color = NULL),
-#   #           fill = "grey99", alpha = 0.05) +
-#   geom_linerangeh(aes(xmin = prevalence_ci_lower, xmax = prevalence_ci_upper), position = position_dodge(width = .8)) +
-#   geom_point(position = position_dodge(width = .8)) +
-#   coord_cartesian(xlim = c(0, 1)) +
-#   theme_linedraw() +
-#   ylab("") +
-#   xlab("Prevalence") +
-#   scale_x_continuous(labels = scales::label_percent(), breaks = c(0, 0.05, 0.1, 0.25, 0.5, 1)) +
-#   guides(color = guide_legend(title = "Measure type",
-#                               reverse = TRUE))
-
-
-p_prevalence_subfields <- res_prevalence |>
+res_prevalence |>
   filter(re_level != "journals") |>
-  ggplot(aes(prevalence_estimate, label, color = outcome)) +
-  geom_linerangeh(aes(xmin = prevalence_ci_lower, xmax = prevalence_ci_upper), position = position_dodge(width = .8)) +
-  geom_point(position = position_dodge(width = .8)) +
+  ggplot(aes(prevalence_estimate, outcome)) +
+  geom_rect(aes(xmin = 0.00, xmax = 0.05, ymin = -Inf, ymax = Inf, color = NULL),
+            fill = "grey65") +
+  geom_rect(aes(xmin = 0.05, xmax = 0.10, ymin = -Inf, ymax = Inf, color = NULL),
+            fill = "grey73") +
+  geom_rect(aes(xmin = 0.10, xmax = 0.25, ymin = -Inf, ymax = Inf, color = NULL),
+            fill = "grey80") +
+  geom_rect(aes(xmin = 0.25, xmax = 0.50, ymin = -Inf, ymax = Inf, color = NULL),
+            fill = "grey90") +
+  geom_rect(aes(xmin = 0.50, xmax = 1.00, ymin = -Inf, ymax = Inf, color = NULL),
+            fill = "grey95") +
+  annotate("text", x = 0.0250, y = "Mixed self-report about behavior", label = "Rare",       size = 4, color = "grey30", angle = 90) +
+  annotate("text", x = 0.0725, y = "Mixed self-report about behavior", label = "Uncommon",   size = 4, color = "grey40", angle = 90) +
+  annotate("text", x = 0.1750, y = "Mixed self-report about behavior", label = "Occasional", size = 4, color = "grey50", angle = 90) +
+  annotate("text", x = 0.3750, y = "Mixed self-report about behavior", label = "Common",     size = 4, color = "grey60", angle = 90) +
+  annotate("text", x = 0.7500, y = "Mixed self-report about behavior", label = "Frequent",   size = 4, color = "grey65", angle = 90) +
+  geom_linerangeh(aes(xmin = prevalence_ci_lower, xmax = prevalence_ci_upper), position = position_dodge(width = .7)) +
+  geom_point(position = position_dodge(width = .7)) +
   coord_cartesian(xlim = c(0, 1)) +
-  theme_linedraw() +
+  theme_linedraw() + 
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        panel.spacing = unit(1, "lines")) +  # Increase spacing between facets  
   ylab("") +
   xlab("Prevalence") +
-  scale_x_continuous(labels = scales::label_percent(), breaks = c(0, 0.05, 0.1, 0.25, 0.5, 1)) +
+  #scale_x_continuous(labels = scales::label_percent(), breaks = c(0, 0.05, 0.1, 0.25, 0.5, 1)) +
+  scale_x_continuous(labels = c("0%", "5%", "10%", "25%", "50%", "75%", "100%"),
+                     breaks = c(0, 0.05, 0.10, 0.25, 0.50, 0.75, 1),
+                     minor_breaks = NULL,
+                     expand = c(0,0)) +
   guides(color = guide_legend(title = "Measure type",
-                              reverse = TRUE))
-
-p_prevalence_subfields
+                              reverse = TRUE)) +
+  facet_wrap(~ fct_rev(label), ncol = 2)
 
 ```
 
@@ -621,6 +637,8 @@ p_prevalence_journals <- res_prevalence |>
                               reverse = TRUE))
 
 p_prevalence_journals
+
+quicksave("p_prevalence_journals", 9, 12)
 
 ```
 
@@ -828,6 +846,8 @@ p_trend_subfields <- res_trends |>
 
 p_trend_subfields
 
+quicksave("p_trend_subfields", 9, 4.5)
+
 ```
 
 #### Journals
@@ -848,6 +868,8 @@ p_trend_journals <- res_trends |>
                               reverse = TRUE))
 
 p_trend_journals
+
+quicksave("p_trend_journals", 9, 12)
 
 ```
 
@@ -903,7 +925,7 @@ res_prevalence_field_year <-
 
 
 # plot
-p_years_field <- ggplot() +
+p_prevalence_and_trend_field <- ggplot() +
   geom_ribbon(data = res_prevalence_field_year, aes(year, ymin = prevalence_ci_lower, ymax = prevalence_ci_upper), fill = "skyblue", alpha = 0.5) +
   geom_smooth(data = res_prevalence_field_year, aes(year, prevalence_estimate),
               method = "lm", color = "black", size = 0.75, se = FALSE) +
@@ -916,13 +938,15 @@ p_years_field <- ggplot() +
   xlab("Year") +
   facet_wrap( ~ outcome, ncol = 2)
 
-p_years_field
+p_prevalence_and_trend_field
+
+quicksave("p_prevalence_and_trend_field", 9, 8)
 
 ```
 
 ### Subfields
 
-```{r}
+```{r fig.height=12, fig.width=12}
 
 # calculate empirical means
 data_summary_subfields <- data_centered |>
@@ -979,7 +1003,7 @@ res_prevalence_subfield_year <-
             by = "year_centered")
 
 # plot
-p_years_subfields <- ggplot() +
+p_prevalence_and_trend_subfields <- ggplot() +
   geom_ribbon(data = res_prevalence_field_year, aes(year, ymin = prevalence_ci_lower, ymax = prevalence_ci_upper), fill = "skyblue", alpha = 0.5) +
   geom_smooth(data = res_prevalence_field_year, aes(year, prevalence_estimate),
               method = "lm", color = "black", size = 0.75, se = FALSE) +
@@ -992,6 +1016,10 @@ p_years_subfields <- ggplot() +
   ylab("Prevalence") +
   xlab("Year") +
   facet_grid(subfield ~ outcome)
+
+p_prevalence_and_trend_subfields
+
+quicksave("p_prevalence_and_trend_subfields", 12, 12)
 
 ```
 
@@ -1017,7 +1045,7 @@ watermark <- function(fontsize = 20){
 
 #### Residual correlations
 
-```{r}
+```{r fig.height=6, fig.width=6}
 
 p_cors_field_intercept + watermark(30)
 
