@@ -19,7 +19,28 @@ output:
 - think about model diagnostics more
 - Extracted trends are currently identical across levels of the random effect, which can't be right. Fix existing code or write a manual version that estimates trend from multiple estimated means? 
 - table of correlations among residuals could star the estimates with intervals that exclude 0. some commented out code attempting this.
+- add categorizations!
 
+# solomon chat
+
+- correlations among the random effects, not the residual variance terms, which we don't have here. dont misdescribe these as residuals
+- could also extract correlations between slopes and intercepts. this would tell us things like "journals that started low tended to increase" or vice versa. 0 correlation: where they start tells you nothing about where they go. watch out for floor/ceiling effects. 
+- priors
+
+- check out {marginaleffects} too
+- or manual
+
+fitted(newdata = ...,
+       re = , # on log odds scale. gives you summaries, but not HDIs vs. percentile intervals.
+       summary = FALSE, # if you want HDIs, use this to not give summaries, instead give an array. compute median and HDIs by column.
+       robust = TRUE)  # median and MADs.
+       
+similar tidybayes functions - drop back to tidybayes if emmeans isn't working? ****
+       
+- ensure consistency of language - percentile based intervals vs HDIs.
+- HDIs are not invariant under transformation, percentile based intervals are.
+
+formula = outcome ~ 1 + year_centered + (1 + year_centered | p | subfield) + (1 + year_centered | q | subfield:journal)
 
 control = list(adapt_delta = .99), 
   iter = 2000, 
@@ -193,6 +214,86 @@ data_simulated |>
 
 # Analyze
 
+## Priors
+
+```{r}
+
+# illustrate that >|4| means always/never
+df <- tibble(p = seq(0, 1, by = 0.01)) |>
+  mutate(logodds = qlogis(p))
+
+ggplot(df, aes(p, logodds)) +
+  geom_point() +
+  geom_vline(xintercept = 0.05)
+
+# mildly regularising prior needed to avoid probabilities of (+/-)Inf 
+
+# normal(0, 1) prior would be useful here in general.
+
+```
+
+
+```{r}
+
+# intercepts normal(X, 1)
+# think about where intercept actually likely to lie for the mean (X): 
+# self reports could be 90%, what's the mean for the prior on the log odds scale?:
+qlogis(.9)
+
+# slopes for year_centered
+# single digit year changes per year? probably agnostic to direction, so mean of 0.
+# sd of normal = 0.30 allows for roughly twice what we see below. So SD = .2 to 1 would still be weakly regularising.
+
+# self reports, p for middle year is .9
+df2 <- tibble(year_centered = seq(-7, +7, by = 1)) |>
+  expand_grid(b1 = seq(-.30, +.30, by = 0.01)) |>
+  mutate(logodds = qlogis(.90) + (b1 * year_centered),
+         p = plogis(logodds))
+
+ggplot(df2, aes(year_centered, logodds, color = b1, group = b1)) +
+  geom_line()
+
+ggplot(df2, aes(year_centered, p, color = b1, group = b1)) +
+  geom_line() +
+  ylim(0, 1)
+
+# for the random effects, weakly regularizing exp(1)
+
+df3 <- tibble(sd = seq(0, 4, by = 0.1)) |>
+  mutate(density = dexp(sd, rate = 1)) # 1 - the point of this would be to rule out values of 10 or 100. still weakly regularising. McElreath uses this frequently in the 2nd edition of rethinking
+
+ggplot(df3, aes(sd, density)) +
+  geom_area() +
+  xlab("SD (on the beta1 etc parameters on the log odds scale)")
+
+
+
+# Define the parameters for the t-distribution
+df <- 3       # Degrees of freedom
+location <- 0 # Mean (location parameter)
+scale <- 1  # Scale (spread) parameter
+
+# Create the plot
+ggplot(data.frame(x = c(-10, 10)), aes(x = x)) +
+  stat_function(fun = function(x) dt((x - location) / scale, df) / scale, 
+                color = "blue", size = 1) +
+  labs(title = "Student's t-distribution (df = 3, mean = 0, scale = 2.5)",
+       x = "X values",
+       y = "Density") +
+  theme_minimal() +
+  xlim(0, NA)
+
+
+# priors on correlations among random effects
+# lkj prior, brms default is 1.
+# depends on number of correlations. 21 correlations means values of lkj above 1 would be more aggressive. So lkj = 1 is merely skeptical of large correlations. Note that lkj prior is placed on the whole matrix, so even if some correlations are really large its very unlikely all would be large.
+# 1 parameter, eta, ranging from 0 to Inf. eta values greater than 1 regularize correlations towards 0. 
+# eta of 1 is flat. from 1 to 2 is more like a hill around 0. 
+
+
+
+```
+
 ## Fit model
 
 ```{r}
@@ -222,26 +323,55 @@ year_centered_values <- data_centered |>
 # set seed
 set.seed(42)
 
+
+formulas <- 
+  bf(formula = directbehavioral ~         1 + year_centered + (1 + year_centered | p | subfield) + (1 + year_centered | q | subfield:journal)) +
+  bf(formula = behavioralproxy ~          1 + year_centered + (1 + year_centered | p | subfield) + (1 + year_centered | q | subfield:journal)) +
+  bf(formula = selfreportsaboutbehavior ~ 1 + year_centered + (1 + year_centered | p | subfield) + (1 + year_centered | q | subfield:journal)) +
+  bf(formula = mixed ~                    1 + year_centered + (1 + year_centered | p | subfield) + (1 + year_centered | q | subfield:journal)) +
+  bf(formula = selfreport ~               1 + year_centered + (1 + year_centered | p | subfield) + (1 + year_centered | q | subfield:journal)) +
+  bf(formula = neurophys ~                1 + year_centered + (1 + year_centered | p | subfield) + (1 + year_centered | q | subfield:journal)) +
+  bf(formula = cognitiveability ~         1 + year_centered + (1 + year_centered | p | subfield) + (1 + year_centered | q | subfield:journal))
+
+priors <- 
+  prior(normal(-2.20, 1), class = Intercept, resp = "directbehavioral") +
+  prior(normal(-1.39, 1), class = Intercept, resp = "behavioralproxy") + # qlogis(.20)
+  prior(normal(+0.00, 1), class = Intercept, resp = "selfreportsaboutbehavior") + # qlogis(.50)
+  prior(normal(+1.10, 1), class = Intercept, resp = "mixed") + # qlogis(.75)
+  prior(normal(+2.20, 1), class = Intercept, resp = "selfreport") + # qlogis(.90)
+  prior(normal(-2.20, 1), class = Intercept, resp = "neurophys") + # qlogis(.10)
+  prior(normal(-2.20, 1), class = Intercept, resp = "cognitiveability") + # qlogis(.10)
+  
+  prior(normal(0, 0.5),   class = b,         resp = "directbehavioral") +
+  prior(normal(0, 0.5),   class = b,         resp = "behavioralproxy") + 
+  prior(normal(0, 0.5),   class = b,         resp = "selfreportsaboutbehavior") + 
+  prior(normal(0, 0.5),   class = b,         resp = "mixed") + 
+  prior(normal(0, 0.5),   class = b,         resp = "selfreport") + 
+  prior(normal(0, 0.5),   class = b,         resp = "neurophys") + 
+  prior(normal(0, 0.5),   class = b,         resp = "cognitiveability") + 
+  
+  prior(exponential(1),   class = sd,        resp = "directbehavioral") +
+  prior(exponential(1),   class = sd,        resp = "behavioralproxy") + 
+  prior(exponential(1),   class = sd,        resp = "selfreportsaboutbehavior") + 
+  prior(exponential(1),   class = sd,        resp = "mixed") + 
+  prior(exponential(1),   class = sd,        resp = "selfreport") + 
+  prior(exponential(1),   class = sd,        resp = "neurophys") + 
+  prior(exponential(1),   class = sd,        resp = "cognitiveability") + 
+  
+  prior(lkj_corr_cholesky(1), class = cor)
+  
 # fit model
 fitted_model <- brm(
-  formula = 
-    bf(formula = directbehavioral ~         1 + year_centered + (1 + year_centered | p | subfield) + (1 + year_centered | q | subfield:journal), 
-       family = bernoulli(link = "logit")) +
-    bf(formula = behavioralproxy ~          1 + year_centered + (1 + year_centered | p | subfield) + (1 + year_centered | q | subfield:journal), 
-       family = bernoulli(link = "logit")) +
-    bf(formula = selfreportsaboutbehavior ~ 1 + year_centered + (1 + year_centered | p | subfield) + (1 + year_centered | q | subfield:journal), 
-       family = bernoulli(link = "logit")) +
-    bf(formula = mixed ~                    1 + year_centered + (1 + year_centered | p | subfield) + (1 + year_centered | q | subfield:journal), 
-       family = bernoulli(link = "logit")) +
-    bf(formula = selfreport ~               1 + year_centered + (1 + year_centered | p | subfield) + (1 + year_centered | q | subfield:journal), 
-       family = bernoulli(link = "logit")) +
-    bf(formula = neurophys ~                1 + year_centered + (1 + year_centered | p | subfield) + (1 + year_centered | q | subfield:journal), 
-       family = bernoulli(link = "logit")) +
-    bf(formula = cognitiveability ~         1 + year_centered + (1 + year_centered | p | subfield) + (1 + year_centered | q | subfield:journal), 
-       family = bernoulli(link = "logit")),
+  formula = formulas,
+  family = bernoulli(link = "logit"),
+  prior = priors,
+  sample_prior = "only",
+  #sample_prior = "no",
   data = data_centered,
   cores = parallel::detectCores(),
-  file = "models/fitted_model"
+  file = "models/fitted_model_prioronly"
+  #file = "models/fitted_model_simulated_data"
+  #file = "models/fitted_model_simulated"
 )
 
 ```
@@ -261,6 +391,14 @@ plot(fitted_model, comparisons = TRUE)
 ### Subfields
 
 #### Prevalence
+
+```{r}
+# solomon suggestions
+temp <- as_draws_df(fitted_model) |>
+  select(starts_with("cor_"))
+  #summarize_all(~ median)
+
+```
 
 ```{r}
 
@@ -582,7 +720,7 @@ res_prevalence |>
 
 ```{r fig.height=6, fig.width=11}
 
-res_prevalence |>
+p_prevalence_subfields <- res_prevalence |>
   filter(re_level != "journals") |>
   ggplot(aes(prevalence_estimate, outcome)) +
   geom_rect(aes(xmin = 0.00, xmax = 0.05, ymin = -Inf, ymax = Inf, color = NULL),
@@ -617,6 +755,10 @@ res_prevalence |>
   guides(color = guide_legend(title = "Measure type",
                               reverse = TRUE)) +
   facet_wrap(~ fct_rev(label), ncol = 2)
+
+p_prevalence_subfields
+
+quicksave("p_prevalence_subfields", 11, 6)
 
 ```
 
