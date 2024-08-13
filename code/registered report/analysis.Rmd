@@ -198,83 +198,136 @@ data_simulated |>
 
 ## Justification of priors
 
+### Intuitions for log-odds
+
+We employ a logistic regression (Bernoulli link function), so priors for the intercepts, b_year_centered, and sd of the random effects are on the log-odds scale.
+
+To illustrate and develop an intuition for log-odds values, we can convert probabilities to log-odds and table/plot them against one another.
+
 ```{r}
 
-# illustrate that >|4| means always/never
-df <- tibble(p = seq(0, 1, by = 0.01)) |>
-  mutate(logodds = qlogis(p))
+df_probability_logodds <- 
+  tibble(probability = seq(0, 1, by = 0.001)) |>
+  mutate(logodds = qlogis(probability))
 
-ggplot(df, aes(p, logodds)) +
-  geom_point() +
-  geom_vline(xintercept = 0.05)
+df_probability_logodds |>
+  filter(probability %in% c(0.01, 0.5, 0.99)) |>
+  kable() |>
+  kable_classic(full_width = FALSE)
 
-# mildly regularising prior needed to avoid probabilities of (+/-)Inf 
-
-# normal(0, 1) prior would be useful here in general.
+ggplot(df_probability_logodds, aes(probability, logodds)) +
+  geom_point(size = 0.1) +
+  geom_vline(xintercept = 0.01, linetype = "dashed", color = "#359EAAFF") +
+  geom_vline(xintercept = 0.99, linetype = "dashed", color = "#359EAAFF") +
+  theme_linedraw() +
+  scale_x_continuous(breaks = breaks_pretty(n = 10)) +
+  xlab("Probability") +
+  ylab("Log-odds")
 
 ```
 
+This shows that a probability of 50% = log-odds of 0. More importantly, |log-odds| > 4.6 refer to probabilities of less than 1%. So, to say that there is a log-odds ±5, 6, or 7 of something occurring means that it almost never/always occurs. For our study, prevalences in the 1-99% range are reasonable. 
+
+### Intercepts (prevalences)
+
+We are looking to employ weakly regularizing priors, i.e., those that help the model converge, and therefore exclude impossible/highly implausible values, without imposing strong prior beliefs onto the model. Given this goal, our priors should therefore both cover the probability of 1-99% range (and a bit beyond) and exclude probabilities that approach ±Inf, therefore |log-odds| of ±4.6 or so. A normally distributed prior on the log-odds scale is therefore useful here.
+
+We will choose specific locations based our a priori beliefs about the prevalence of different types of measures. However, given the width of the prior on each, this won't make much difference. It's more about indicating to the model what is unlikely (e.g., only 1% of studies using self-report measures) rather than a strong belief about what is likely.
+
+Specifically, we choose three different priors depending on our beliefs about each type of measure:
+
+- No strong beliefs about prevalence: mean = .50 (on probability scale), sd = 1.4 (on log-odds scale)
+- Prior belief prevalence is high: mean = .70 (on probability scale), sd = 1 (on log-odds scale)
+- Prior belief prevalence is low: mean = .25 (on probability scale), sd = 1 (on log-odds scale)
+
+The asymmetry between low and high is intentional, reflecting our stronger belief that low prevalences are lower than high prevalances are high.
 
 ```{r}
 
-# intercepts normal(X, 1)
-# think about where intercept actually likely to lie for the mean (X): 
-# self reports could be 90%, what's the mean for the prior on the log odds scale?:
-qlogis(.9)
+illustrate_intercept_prior <- function(mean_prob, sd_logodds){
+  df_normal_logodds <- 
+    tibble(logodds = rnorm(mean = qlogis(mean_prob), sd = sd_logodds, n = 1000000)) |>
+    mutate(probability = plogis(logodds))
+  
+  ggplot(df_normal_logodds, aes(probability)) +
+    geom_density(fill = "grey20") +
+    theme_linedraw() +
+    scale_x_continuous(breaks = breaks_pretty(n = 10)) +
+    xlab("Probability") +
+    ylab("Density") +
+    ggtitle(paste0("Prevalence prior: \nnormal(M = qlogis(", mean_prob, "), SD = 1) log-odds distribution converted to probabilities"))
+}
 
-# slopes for year_centered
-# single digit year changes per year? probably agnostic to direction, so mean of 0.
-# sd of normal = 0.30 allows for roughly twice what we see below. So SD = .2 to 1 would still be weakly regularising.
+illustrate_intercept_prior(mean_prob = .50, sd_logodds = 1.4)
+illustrate_intercept_prior(mean_prob = .70, sd_logodds = 1)
+illustrate_intercept_prior(mean_prob = .25, sd_logodds = 1)
 
-# self reports, p for middle year is .9
-df2 <- tibble(year_centered = seq(-7, +7, by = 1)) |>
-  expand_grid(b1 = seq(-.30, +.30, by = 0.01)) |>
-  mutate(logodds = qlogis(.90) + (b1 * year_centered),
-         p = plogis(logodds))
+```
 
-ggplot(df2, aes(year_centered, logodds, color = b1, group = b1)) +
-  geom_line()
+### Slopes (trends)
 
-ggplot(df2, aes(year_centered, p, color = b1, group = b1)) +
-  geom_line() +
-  ylim(0, 1)
+Normal distributions (on the log-odds scale) are also useful for the slopes. However, because the slopes compound over years, relatively small values of slope can produce large changes in the prevalence over the 15 year period. 
 
-# for the random effects, weakly regularizing exp(1)
+The below visualizes different (a) values of prevalence (probability scale) in the middle year (the mean of the prior distribution) and (b) values of 2 X SD of the prior distribution (on the log-odds scale), which corresponds to roughly 95% of the range of values covered by the prior. 
 
-df3 <- tibble(sd = seq(0, 4, by = 0.1)) |>
-  mutate(density = dexp(sd, rate = 1)) # 1 - the point of this would be to rule out values of 10 or 100. still weakly regularising. McElreath uses this frequently in the 2nd edition of rethinking
+```{r}
 
-ggplot(df3, aes(sd, density)) +
+illustrate_trend_prior <- function(mean_prevalence_prob, sd_trend_prob){
+  df_probability_logodds <- 
+    tibble(year_centered = seq(-7, +7, by = 1)) |>
+    expand_grid(b1 = seq(sd_trend_prob*-2, sd_trend_prob*2, by = .01)) |>
+    mutate(logodds = qlogis(mean_prevalence_prob) + (b1 * year_centered),
+           probability = plogis(logodds),
+           year = year_centered + 2016)
+  
+  ggplot(df_probability_logodds, aes(year, probability, color = b1, group = b1)) +
+    geom_line() +
+    scale_x_continuous(breaks = breaks_pretty(n = 10)) +
+    theme_linedraw() +
+    ylim(0, 1) +
+    ylab("Prevalence") +
+    xlab("Year") +
+    ggtitle(paste0("Prevalence prior: \nnormal(M = qlogis(", mean_prevalence_prob, "), SD = ", sd_trend_prob, ") log-odds distribution converted to probabilities"))
+}
+
+illustrate_trend_prior(mean_prevalence_prob = .10, sd_trend_prob = .1)
+illustrate_trend_prior(mean_prevalence_prob = .50, sd_trend_prob = .1)
+illustrate_trend_prior(mean_prevalence_prob = .90, sd_trend_prob = .1)
+
+illustrate_trend_prior(mean_prevalence_prob = .10, sd_trend_prob = .2)
+illustrate_trend_prior(mean_prevalence_prob = .50, sd_trend_prob = .2) # probably for the best
+illustrate_trend_prior(mean_prevalence_prob = .90, sd_trend_prob = .2)
+
+illustrate_trend_prior(mean_prevalence_prob = .10, sd_trend_prob = .3)
+illustrate_trend_prior(mean_prevalence_prob = .50, sd_trend_prob = .3)
+illustrate_trend_prior(mean_prevalence_prob = .90, sd_trend_prob = .3)
+
+```
+
+A normal prior for the slopes with M = 0 and SD = .20 allows, regardless of the prevalence in the middle year, for very large trends across years. E.g., for prevalence = .50 in the middle year, the 95% of the prior allows for changes of from roughly 5% in the first year to 95% in the final year. This is unlikely, but the point of the these weakly regularising priors is to aid convergence by excluding truly impossible or highly implausible values. This prior does this. 
+
+### SD of the random effects
+
+The width of the SDs on the random effects (subfield and subfield:journal) also require a prior, still on the log-odds scale, which refers to the degree of variability between subfields/journals.
+
+McElreath uses exponential(1) as a weakly regularizing prior for SDs on random effects frequently in the 2nd edition of Statistical Rethinking, and therefore we do here. Again, this serves to exclude truly impossible or highly implausible values (e.g., 10 or 100) to aid convergence, rather than to assert strong prior beliefs. The below plots such an exp(1) distribution.
+
+```{r}
+
+prior_sd <- tibble(sd = seq(0, 4, by = 0.1)) |>
+  mutate(density = dexp(sd, rate = 1))  
+
+ggplot(prior_sd, aes(sd, density)) +
   geom_area() +
-  xlab("SD (on the beta1 etc parameters on the log odds scale)")
-
-
-
-# Define the parameters for the t-distribution
-df <- 3       # Degrees of freedom
-location <- 0 # Mean (location parameter)
-scale <- 1  # Scale (spread) parameter
-
-# Create the plot
-ggplot(data.frame(x = c(-10, 10)), aes(x = x)) +
-  stat_function(fun = function(x) dt((x - location) / scale, df) / scale, 
-                color = "blue", size = 1) +
-  labs(title = "Student's t-distribution (df = 3, mean = 0, scale = 2.5)",
-       x = "X values",
-       y = "Density") +
-  theme_minimal() +
-  xlim(0, NA)
-
-
-# priors on correlations among random effects
-# lkj prior, brms default is 1.
-# depends on number of correlations. 21 correlations means values of lkj above 1 would be more aggressive. So lkj = 1 is merely skeptical of large correlations. Note that lkj prior is placed on the whole matrix, so even if some correlations are really large its very unlikely all would be large.
-# 1 parameter, eta, ranging from 0 to Inf. eta values greater than 1 regularize correlations towards 0. 
-# eta of 1 is flat. from 1 to 2 is more like a hill around 0. 
-
-
+  xlab("SD of the random effects (on the log-odds scale)") +
+  ylab("Density") +
+  theme_linedraw()
 
 ```
+
+### Correlations among the random effects
+
+{brms} uses a Lewandowski-Kurowicka-Joe (LKJ) prior with eta = 1, i.e., a flat distribution. LKJ depends on the number of correlations involved, and we have a relatively large amount (21), so values of eta above 1, which would regularize correlations towards zero, would be more aggressive than the weakly regularising prior that we're looking for. LKJ(1) is merely skeptical of large correlations, but is applied to the matrix as a whole, so a minority of large correlations are still possible with this prior. We therefore retain the {brms} default prior of lkj(1).
 
 ## Fit model
 
@@ -342,13 +395,13 @@ priors <-
 # fit model
 fitted_model <- brm(
   formula = formulas,
-  family = bernoulli(link = "logit"),
-  prior = priors,
-  data = data_centered,
-  cores = parallel::detectCores(),
-  seed = 42,
-  iter = 8000, 
-  warmup = 4000, 
+  family  = bernoulli(link = "logit"),
+  prior   = priors,
+  data    = data_centered,
+  cores   = parallel::detectCores(),
+  seed    = 42,
+  iter    = 8000, 
+  warmup  = 4000, 
   #sample_prior = "only",
   #file = "models/fitted_model_prioronly"
   sample_prior = "no",
