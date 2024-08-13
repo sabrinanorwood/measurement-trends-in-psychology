@@ -16,7 +16,6 @@ output:
 
 - Add an (alternative) weighted model that weights by total articles published in each journal during that year? This should only produce results for the field as a whole, eg "Psychology (weighted by publications per journal per year)"
 - remove/refactor plotting of summary data in plots, as the real data will be planned-missing
-- elaborate the logic of the priors
 - think about model diagnostics more
 - Extracted trends are currently identical across levels of the random effect, which can't be right. Fix existing code or write a manual version that estimates trend from multiple estimated means? drop back to tidybayes if emmeans isn't working, or try {marginaleffects}
 - table of correlations among random effects could star the estimates with intervals that exclude 0. some commented out code attempting this.
@@ -35,19 +34,18 @@ knitr::opts_chunk$set(message = FALSE,
 library(dplyr)
 library(tidyr)
 library(tibble)
+library(forcats)
+library(purrr)
+library(janitor)
 library(ggplot2)
 library(scales)
 library(ggstance)
+library(ggcorrplot)
 library(brms)
 library(tidybayes)
 library(emmeans)
-#library(broom)
-library(purrr)
-library(janitor)
 library(knitr)
 library(kableExtra)
-library(forcats)
-library(ggcorrplot)
 
 
 dir.create("models")
@@ -236,11 +234,11 @@ We will choose specific locations based our a priori beliefs about the prevalenc
 
 Specifically, we choose three different priors depending on our beliefs about each type of measure:
 
-- No strong beliefs about prevalence: mean = .50 (on probability scale), sd = 1.4 (on log-odds scale)
-- Prior belief prevalence is high: mean = .70 (on probability scale), sd = 1 (on log-odds scale)
-- Prior belief prevalence is low: mean = .25 (on probability scale), sd = 1 (on log-odds scale)
+- No strong beliefs about prevalence: mean = .50 (on probability scale), sd = 1.4 (on log-odds scale). This prior serves only to specify that very high or low prevalences are less likely.
+- Prior belief prevalence is high: mean = .70 (on probability scale), sd = 1 (on log-odds scale). This prior serves to specify that low prevalences less likely.
+- Prior belief prevalence is low: mean = .25 (on probability scale), sd = 1 (on log-odds scale). This prior serves to specify that high prevalences less likely. 
 
-The asymmetry between low and high is intentional, reflecting our stronger belief that low prevalences are lower than high prevalances are high.
+The asymmetry between low and high is intentional, reflecting our stronger belief that low prevalences are lower than high prevalence are high.
 
 ```{r}
 
