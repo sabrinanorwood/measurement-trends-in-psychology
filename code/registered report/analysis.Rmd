@@ -14,39 +14,14 @@ output:
 
 # TODO
 
-- add pairwise comparisons for subfields?
-- think about priors more
+- Add an (alternative) weighted model that weights by total articles published in each journal during that year? This should only produce results for the field as a whole, eg "Psychology (weighted by publications per journal per year)"
+- remove/refactor plotting of summary data in plots, as the real data will be planned-missing
+- elaborate the logic of the priors
 - think about model diagnostics more
-- Extracted trends are currently identical across levels of the random effect, which can't be right. Fix existing code or write a manual version that estimates trend from multiple estimated means? 
-- table of correlations among residuals could star the estimates with intervals that exclude 0. some commented out code attempting this.
-- add categorizations!
-
-# solomon chat
-
+- Extracted trends are currently identical across levels of the random effect, which can't be right. Fix existing code or write a manual version that estimates trend from multiple estimated means? drop back to tidybayes if emmeans isn't working, or try {marginaleffects}
+- table of correlations among random effects could star the estimates with intervals that exclude 0. some commented out code attempting this.
 - correlations among the random effects, not the residual variance terms, which we don't have here. dont misdescribe these as residuals
-- could also extract correlations between slopes and intercepts. this would tell us things like "journals that started low tended to increase" or vice versa. 0 correlation: where they start tells you nothing about where they go. watch out for floor/ceiling effects. 
-- priors
-
-- check out {marginaleffects} too
-- or manual
-
-fitted(newdata = ...,
-re = , # on log odds scale. gives you summaries, but not HDIs vs. percentile intervals.
-summary = FALSE, # if you want HDIs, use this to not give summaries, instead give an array. compute median and HDIs by column.
-robust = TRUE)  # median and MADs.
-
-similar tidybayes functions - drop back to tidybayes if emmeans isn't working? ****
-
-- ensure consistency of language - percentile based intervals vs HDIs.
-- HDIs are not invariant under transformation, percentile based intervals are.
-
-formula = outcome ~ 1 + year_centered + (1 + year_centered | p | subfield) + (1 + year_centered | q | subfield:journal)
-
-control = list(adapt_delta = .99), 
-iter = 2000, 
-warmup = 1000,  
-chains = 4, 
-cores = 4  
+- don't misdescribe percentile based CIs with HDIs. below uses percentile CIs
 
 ```{r setup, include=FALSE}
 
@@ -90,6 +65,13 @@ quicksave <- function(name, width, height){
          dpi = 600,
          width = width, 
          height = height)
+}
+
+# round using half-up strategy and retaining trailing zeros
+rnd <- function(x, digits = 2) {
+  rounded_number <- round_half_up(x, digits)
+  formatted_number <- sprintf(paste0("%.", digits, "f"), rounded_number)
+  return(formatted_number)
 }
 
 ```
@@ -214,7 +196,7 @@ data_simulated |>
 
 # Analyze
 
-## Priors
+## Justification of priors
 
 ```{r}
 
@@ -319,10 +301,6 @@ year_centered_values <- data_centered |>
   distinct(year_centered) |>
   pull(year_centered)
 
-
-# set seed
-set.seed(42)
-
 # specify Wilkinson notation for the model
 formulas <- 
   bf(formula = directbehavioral ~         1 + year_centered + (1 + year_centered | p | subfield) + (1 + year_centered | q | subfield:journal)) +
@@ -368,11 +346,15 @@ fitted_model <- brm(
   prior = priors,
   data = data_centered,
   cores = parallel::detectCores(),
+  seed = 42,
+  iter = 8000, 
+  warmup = 4000, 
   #sample_prior = "only",
   #file = "models/fitted_model_prioronly"
   sample_prior = "no",
   file = "models/fitted_model_simulated_data"
   #file = "models/fitted_model"
+  #control = list(adapt_delta = .99), can be increased from the default to eg .99 if there are divergent transitions
 )
 
 ```
@@ -387,7 +369,7 @@ plot(fitted_model, comparisons = TRUE)
 
 ```
 
-## Correlations among residuals
+## Correlations among the random effects
 
 ### Subfields
 
@@ -403,10 +385,10 @@ temp <- as_draws_df(fitted_model) |>
 
 ```{r}
 
-# extract residual correlations/covariances
+# extract correlations/covariances among the random effects
 var_cors <- VarCorr(fitted_model)
 
-# wrangle the residual correlations at the subfield level of the random effect
+# wrangle the correlations at the subfield level of the random effect
 var_cors_field <- var_cors$subfield$cor |>
   as.data.frame() |>
   rownames_to_column(var = "var")
@@ -444,7 +426,7 @@ var_cors_field_intercept <- var_cors_field |>
 
 # print table
 var_cors_field_intercept |>
-  kable(caption = "Correlations among residuals for prevalences at the subfield level") |>
+  kable(caption = "Correlations among random effects for prevalence at the subfield level") |>
   kable_classic(full_width = FALSE)
 
 
@@ -479,7 +461,7 @@ var_cors_field_slope <- var_cors_field |>
   rename_with(~ str_remove(., "_year_centered"))
 
 var_cors_field_slope |>
-  kable(caption = "Correlations among residuals for trend at the subfield level") |>
+  kable(caption = "Correlations among random effects for trend at the subfield level") |>
   kable_classic(full_width = FALSE)
 
 corr_field_slope <- 
@@ -523,7 +505,7 @@ var_cors_journal_intercept <- var_cors_journal |>
   rename_with(~ str_remove(., "_Intercept"))
 
 var_cors_journal_intercept |>
-  kable(caption = "Correlations among residuals for prevalences at the journal level") |>
+  kable(caption = "Correlations among random effects for prevalence at the journal level") |>
   kable_classic(full_width = FALSE)
 
 ```
@@ -708,8 +690,14 @@ if(exists("models/posterior_prevalence.rds")){
                                   "General",
                                   "I/O",
                                   "Social/Personality")) |>
+    mutate(prevalence_category = case_when(prevalence_estimate < .05 ~ "Rare",
+                                           prevalence_estimate >= .05 & prevalence_estimate < .10 ~ "Uncommon",
+                                           prevalence_estimate >= .10 & prevalence_estimate < .25 ~ "Occasional",
+                                           prevalence_estimate >= .25 & prevalence_estimate < .50 ~ "Common",
+                                           prevalence_estimate >= .50 ~ "Frequent"),
+           prevalence_results = paste0(rnd(prevalence_estimate), " 95% CI [", rnd(prevalence_ci_lower), ", ", rnd(prevalence_ci_upper), "]")) |>
     select(outcome, label, re_level, subfield, journal, 
-           prevalence_estimate, prevalence_ci_lower, prevalence_ci_upper) |>
+           prevalence_estimate, prevalence_ci_lower, prevalence_ci_upper, prevalence_category, prevalence_results) |>
     arrange(outcome, subfield)
   
   write_rds(posterior_prevalence, "models/posterior_prevalence.rds")
@@ -992,8 +980,12 @@ if(exists("models/posterior_trends.rds")){
                                   "General",
                                   "I/O",
                                   "Social/Personality")) |>
+    mutate(trend_category = case_when(trend_ci_lower > 0 ~ "Increasing",
+                                      trend_ci_upper < 0 ~ "Decreasing",
+                                      TRUE ~ "No trend detected"),
+           trend_results = paste0(rnd(trend_estimate), " 95% CI [", rnd(trend_ci_lower), ", ", rnd(trend_ci_upper), "]")) |>
     select(outcome, label, re_level, subfield, journal, 
-           trend_estimate, trend_ci_lower, trend_ci_upper) |>
+           trend_estimate, trend_ci_lower, trend_ci_upper, trend_category, trend_results) |>
     arrange(outcome, subfield)
   
   write_rds(posterior_trends, "models/posterior_trends.rds")
@@ -1035,6 +1027,7 @@ p_trend_subfields <- posterior_trends |>
                              "I/O",
                              "Social/Personality")) |>
   ggplot(aes(trend_estimate, outcome)) +
+  geom_vline(xintercept = 0, linetype = "dotted") +
   geom_linerangeh(aes(xmin = trend_ci_lower, xmax = trend_ci_upper)) +
   geom_point() +
   coord_cartesian(xlim = c(-.1, .1)) +
@@ -1341,7 +1334,7 @@ watermark <- function(fontsize = 20){
 
 ```
 
-#### Residual correlations
+#### Correlations
 
 ```{r fig.height=6, fig.width=6}
 
@@ -1389,37 +1382,16 @@ p_years_subfields + watermark()
 
 ```
 
-# Combined table with summary conclusions \TODO
+## Combined table with summary conclusions
 
 categorical conclusions for field, subfield, and journal levels based on prevalence category and trend (detectably increasing/decreasing, no detectable change)
 
 ```{r}
 
-rnd <- function(x, digits = 2) {
-  # Round the number to the specified number of digits
-  rounded_number <- round_half_up(x, digits)
-  
-  # Format the number as a string, retaining trailing zeros
-  formatted_number <- sprintf(paste0("%.", digits, "f"), rounded_number)
-  
-  return(formatted_number)
-}
-
 posterior_prevalence_and_trends <- 
   full_join(posterior_prevalence, 
             posterior_trends,
-            by = c("outcome", "label", "re_level", "subfield", "journal")) |>
-  mutate(prevalence_category = case_when(prevalence_estimate < .05 ~ "Rare",
-                                         prevalence_estimate >= .05 & prevalence_estimate < .10 ~ "Uncommon",
-                                         prevalence_estimate >= .10 & prevalence_estimate < .25 ~ "Occasional",
-                                         prevalence_estimate >= .25 & prevalence_estimate < .50 ~ "Common",
-                                         prevalence_estimate >= .50 ~ "Frequent"),
-         trend_category = case_when(trend_ci_lower > 0 ~ "Increasing",
-                                    trend_ci_upper < 0 ~ "Decreasing",
-                                    TRUE ~ "No trend detected"),
-         combined_category = paste(prevalence_category, "and", trend_category),
-         prevalence_results = paste0(rnd(prevalence_estimate), " 95% CI [", rnd(prevalence_ci_lower), ", ", rnd(prevalence_ci_upper), "]"),
-         trend_results = paste0(rnd(trend_estimate), " 95% CI [", rnd(trend_ci_lower), ", ", rnd(trend_ci_upper), "]")) 
+            by = c("outcome", "label", "re_level", "subfield", "journal"))
 
 write_csv(posterior_prevalence_and_trends, "../../data/registered report/results/posterior_prevalence_and_trends.csv")
 
