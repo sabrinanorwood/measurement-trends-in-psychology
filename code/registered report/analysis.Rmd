@@ -31,22 +31,22 @@ output:
 - or manual
 
 fitted(newdata = ...,
-       re = , # on log odds scale. gives you summaries, but not HDIs vs. percentile intervals.
-       summary = FALSE, # if you want HDIs, use this to not give summaries, instead give an array. compute median and HDIs by column.
-       robust = TRUE)  # median and MADs.
-       
+re = , # on log odds scale. gives you summaries, but not HDIs vs. percentile intervals.
+summary = FALSE, # if you want HDIs, use this to not give summaries, instead give an array. compute median and HDIs by column.
+robust = TRUE)  # median and MADs.
+
 similar tidybayes functions - drop back to tidybayes if emmeans isn't working? ****
-       
+
 - ensure consistency of language - percentile based intervals vs HDIs.
 - HDIs are not invariant under transformation, percentile based intervals are.
 
 formula = outcome ~ 1 + year_centered + (1 + year_centered | p | subfield) + (1 + year_centered | q | subfield:journal)
 
 control = list(adapt_delta = .99), 
-  iter = 2000, 
-  warmup = 1000,  
-  chains = 4, 
-  cores = 4  
+iter = 2000, 
+warmup = 1000,  
+chains = 4, 
+cores = 4  
 
 ```{r setup, include=FALSE}
 
@@ -323,7 +323,7 @@ year_centered_values <- data_centered |>
 # set seed
 set.seed(42)
 
-
+# specify Wilkinson notation for the model
 formulas <- 
   bf(formula = directbehavioral ~         1 + year_centered + (1 + year_centered | p | subfield) + (1 + year_centered | q | subfield:journal)) +
   bf(formula = behavioralproxy ~          1 + year_centered + (1 + year_centered | p | subfield) + (1 + year_centered | q | subfield:journal)) +
@@ -333,6 +333,7 @@ formulas <-
   bf(formula = neurophys ~                1 + year_centered + (1 + year_centered | p | subfield) + (1 + year_centered | q | subfield:journal)) +
   bf(formula = cognitiveability ~         1 + year_centered + (1 + year_centered | p | subfield) + (1 + year_centered | q | subfield:journal))
 
+# specify priors
 priors <- 
   prior(normal(-2.20, 1), class = Intercept, resp = "directbehavioral") +
   prior(normal(-1.39, 1), class = Intercept, resp = "behavioralproxy") + # qlogis(.20)
@@ -359,19 +360,19 @@ priors <-
   prior(exponential(1),   class = sd,        resp = "cognitiveability") + 
   
   prior(lkj_corr_cholesky(1), class = cor)
-  
+
 # fit model
 fitted_model <- brm(
   formula = formulas,
   family = bernoulli(link = "logit"),
   prior = priors,
-  sample_prior = "only",
-  #sample_prior = "no",
   data = data_centered,
   cores = parallel::detectCores(),
-  file = "models/fitted_model_prioronly"
-  #file = "models/fitted_model_simulated_data"
-  #file = "models/fitted_model_simulated"
+  #sample_prior = "only",
+  #file = "models/fitted_model_prioronly"
+  sample_prior = "no",
+  file = "models/fitted_model_simulated_data"
+  #file = "models/fitted_model"
 )
 
 ```
@@ -396,7 +397,7 @@ plot(fitted_model, comparisons = TRUE)
 # solomon suggestions
 temp <- as_draws_df(fitted_model) |>
   select(starts_with("cor_"))
-  #summarize_all(~ median)
+#summarize_all(~ median)
 
 ```
 
@@ -482,11 +483,11 @@ var_cors_field_slope |>
   kable_classic(full_width = FALSE)
 
 corr_field_slope <- 
-
-# show_col(viridis::mako(25))
-# viridis::mako(25)
   
-p_cors_field_slope <- var_cors_field_slope |> 
+  # show_col(viridis::mako(25))
+  # viridis::mako(25)
+  
+  p_cors_field_slope <- var_cors_field_slope |> 
   column_to_rownames("var") |>
   ggcorrplot(hc.order = TRUE, 
              method = "circle",
@@ -540,176 +541,182 @@ Resource used: https://www.andrewheiss.com/blog/2021/11/10/ame-bayes-re-guide/
 
 ```{r}
 
-# field
-est_prevalence_grandmean <- function(outcome, fit){
-  fit |>
-    emmeans(specs = ~ 1,
-            at = list(year_centered = 0),
-            epred = TRUE,
-            re_formula = NA,
-            allow_new_levels = FALSE,
-            resp = outcome) |>
-    summary() |>
-    mutate(outcome = outcome) |>
-    select(prevalence_estimate = emmean,
-           prevalence_ci_lower = lower.HPD,
-           prevalence_ci_upper = upper.HPD)
+if(exists("models/posterior_prevalence.rds")){
+  posterior_prevalence <- read_rds("models/posterior_prevalence.rds")
+} else {
+  
+  # field
+  est_prevalence_grandmean <- function(outcome, fit){
+    fit |>
+      emmeans(specs = ~ 1,
+              at = list(year_centered = 0),
+              epred = TRUE,
+              re_formula = NA,
+              allow_new_levels = FALSE,
+              resp = outcome) |>
+      summary() |>
+      mutate(outcome = outcome) |>
+      select(prevalence_estimate = emmean,
+             prevalence_ci_lower = lower.HPD,
+             prevalence_ci_upper = upper.HPD)
+  }
+  
+  posterior_prevalence_field <- 
+    expand_grid(outcome = outcome_measures) |>
+    tibble(res = pmap(list(outcome), 
+                      est_prevalence_grandmean, 
+                      fit = fitted_model)) |>
+    unnest(res) |>
+    mutate(re_level = "field",
+           subfield = "hypothetical typical subfield", 
+           journal = "hypothetical typical journal")
+  
+  
+  
+  # estimate prevalence for either an existing subfield and journal, or an existing subfield and hypothetical journal, or hypothetical subfield and journal
+  est_prevalence <- function(outcome, subfield, journal, fit){
+    fit |>
+      emmeans(specs = ~ 1,
+              at = list(year_centered = 0,
+                        subfield = subfield,
+                        journal = journal),
+              resp = outcome,
+              epred = TRUE,
+              re_formula = NULL,
+              allow_new_levels = TRUE,
+              sample_new_levels = "uncertainty",
+              rg.limit = 40000)  |>
+      summary() |>
+      select(prevalence_estimate = emmean,
+             prevalence_ci_lower = lower.HPD,
+             prevalence_ci_upper = upper.HPD)
+  }
+  
+  helper_function_prevalence <- function(outcome, subfield, journal, fit){
+    tibble(outcome = outcome,
+           subfield = subfield,
+           journal = journal) |>
+      mutate(res = pmap(list(outcome,
+                             subfield,
+                             journal,
+                             list(fit)),
+                        est_prevalence)) |>
+      unnest(cols = c(res)) |>
+      select(-outcome, -subfield, -journal)
+  }
+  
+  # subfields
+  posterior_prevalence_subfields <- 
+    expand_grid(outcome = outcome_measures,
+                data_centered |>
+                  distinct(subfield),
+                journal = "hypothetical typical journal") |>
+    mutate(res = pmap(list(outcome, subfield, journal), 
+                      helper_function_prevalence, 
+                      fit = fitted_model)) |>
+    unnest() |>
+    mutate(re_level = "subfields")
+  
+  # journals
+  posterior_prevalence_journals <- 
+    expand_grid(outcome = outcome_measures,
+                data_centered |>
+                  distinct(subfield, journal)) |>
+    mutate(res = pmap(list(outcome, subfield, journal), 
+                      helper_function_prevalence, 
+                      fit = fitted_model)) |>
+    unnest() |>
+    mutate(re_level = "journals")
+  
+  # combine
+  posterior_prevalence <- 
+    bind_rows(posterior_prevalence_field,
+              posterior_prevalence_subfields,
+              posterior_prevalence_journals) |>
+    mutate(label = case_when(re_level == "field" ~ "Psychology",
+                             re_level == "subfields" & journal == "hypothetical typical journal" ~ subfield,
+                             journal != "hypothetical typical journal" & !is.na(journal) ~ journal)) |>
+    mutate(label = fct_relevel(
+      label,
+      "Psychology", 
+      
+      "General", 
+      "General journal 2", 
+      "General journal 3", 
+      "General journal 4", 
+      "General journal 5", 
+      "General journal 1", 
+      
+      "Cognitive", 
+      "Cognitive journal 2", 
+      "Cognitive journal 3", 
+      "Cognitive journal 4", 
+      "Cognitive journal 5", 
+      "Cognitive journal 1", 
+      
+      "Clinical", 
+      "Clinical journal 3", 
+      "Clinical journal 4", 
+      "Clinical journal 5", 
+      "Clinical journal 1", 
+      "Clinical journal 2", 
+      
+      "Developmental", 
+      "Developmental journal 4", 
+      "Developmental journal 5", 
+      "Developmental journal 1", 
+      "Developmental journal 2", 
+      "Developmental journal 3", 
+      
+      "I/O", 
+      "I/O journal 5", 
+      "I/O journal 1", 
+      "I/O journal 2", 
+      "I/O journal 3", 
+      "I/O journal 4", 
+      
+      "Social/Personality", 
+      "Social/Personality journal 1", 
+      "Social/Personality journal 2", 
+      "Social/Personality journal 3", 
+      "Social/Personality journal 4", 
+      "Social/Personality journal 5"                   
+    ),
+    label = fct_rev(label)) |>
+    mutate(outcome = case_when(outcome == "directbehavioral" ~ "Direct Behavioral Measure",		
+                               outcome == "behavioralproxy" ~ "Behavioral Proxy",
+                               outcome == "selfreportsaboutbehavior" ~ "Self-Report about Behavior",
+                               outcome == "mixed" ~ "Mixed Self-Report",
+                               outcome == "selfreport" ~ "Self-Report about Subjective Experience",
+                               outcome == "neurophys" ~ "Neurophysiological",
+                               outcome == "cognitiveability" ~ "Cognitive Ability",
+                               TRUE ~ outcome),
+           outcome = fct_relevel(outcome, 
+                                 "Direct Behavioral Measure",		
+                                 "Behavioral Proxy",
+                                 "Self-Report about Behavior",
+                                 "Mixed Self-Report",
+                                 "Self-Report about Subjective Experience",
+                                 "Neurophysiological",
+                                 "Cognitive Ability"),
+           outcome = fct_rev(outcome),
+           subfield = fct_relevel(subfield,
+                                  "hypothetical typical subfield",
+                                  "Clinical",
+                                  "Cognitive",
+                                  "Developmental",
+                                  "General",
+                                  "I/O",
+                                  "Social/Personality")) |>
+    select(outcome, label, re_level, subfield, journal, 
+           prevalence_estimate, prevalence_ci_lower, prevalence_ci_upper) |>
+    arrange(outcome, subfield)
+  
+  write_rds(posterior_prevalence, "models/posterior_prevalence.rds")
 }
-
-res_prevalence_field <- 
-  expand_grid(outcome = outcome_measures) |>
-  tibble(res = pmap(list(outcome), 
-                    est_prevalence_grandmean, 
-                    fit = fitted_model)) |>
-  unnest(res) |>
-  mutate(re_level = "field",
-         subfield = "hypothetical typical subfield", 
-         journal = "hypothetical typical journal")
-
-
-
-# estimate prevalence for either an existing subfield and journal, or an existing subfield and hypothetical journal, or hypothetical subfield and journal
-est_prevalence <- function(outcome, subfield, journal, fit){
-  fit |>
-    emmeans(specs = ~ 1,
-            at = list(year_centered = 0,
-                      subfield = subfield,
-                      journal = journal),
-            resp = outcome,
-            epred = TRUE,
-            re_formula = NULL,
-            allow_new_levels = TRUE,
-            sample_new_levels = "uncertainty",
-            rg.limit = 40000)  |>
-    summary() |>
-    select(prevalence_estimate = emmean,
-           prevalence_ci_lower = lower.HPD,
-           prevalence_ci_upper = upper.HPD)
-}
-
-helper_function_prevalence <- function(outcome, subfield, journal, fit){
-  tibble(outcome = outcome,
-         subfield = subfield,
-         journal = journal) |>
-    mutate(res = pmap(list(outcome,
-                           subfield,
-                           journal,
-                           list(fit)),
-                      est_prevalence)) |>
-    unnest(cols = c(res)) |>
-    select(-outcome, -subfield, -journal)
-}
-
-# subfields
-res_prevalence_subfields <- 
-  expand_grid(outcome = outcome_measures,
-              data_centered |>
-                distinct(subfield),
-              journal = "hypothetical typical journal") |>
-  mutate(res = pmap(list(outcome, subfield, journal), 
-                    helper_function_prevalence, 
-                    fit = fitted_model)) |>
-  unnest() |>
-  mutate(re_level = "subfields")
-
-# journals
-res_prevalence_journals <- 
-  expand_grid(outcome = outcome_measures,
-              data_centered |>
-                distinct(subfield, journal)) |>
-  mutate(res = pmap(list(outcome, subfield, journal), 
-                    helper_function_prevalence, 
-                    fit = fitted_model)) |>
-  unnest() |>
-  mutate(re_level = "journals")
-
-# combine
-res_prevalence <- 
-  bind_rows(res_prevalence_field,
-            res_prevalence_subfields,
-            res_prevalence_journals) |>
-  mutate(label = case_when(re_level == "field" ~ "Psychology",
-                           re_level == "subfields" & journal == "hypothetical typical journal" ~ subfield,
-                           journal != "hypothetical typical journal" & !is.na(journal) ~ journal)) |>
-  mutate(label = fct_relevel(
-    label,
-    "Psychology", 
-    
-    "General", 
-    "General journal 2", 
-    "General journal 3", 
-    "General journal 4", 
-    "General journal 5", 
-    "General journal 1", 
-    
-    "Cognitive", 
-    "Cognitive journal 2", 
-    "Cognitive journal 3", 
-    "Cognitive journal 4", 
-    "Cognitive journal 5", 
-    "Cognitive journal 1", 
-    
-    "Clinical", 
-    "Clinical journal 3", 
-    "Clinical journal 4", 
-    "Clinical journal 5", 
-    "Clinical journal 1", 
-    "Clinical journal 2", 
-    
-    "Developmental", 
-    "Developmental journal 4", 
-    "Developmental journal 5", 
-    "Developmental journal 1", 
-    "Developmental journal 2", 
-    "Developmental journal 3", 
-    
-    "I/O", 
-    "I/O journal 5", 
-    "I/O journal 1", 
-    "I/O journal 2", 
-    "I/O journal 3", 
-    "I/O journal 4", 
-    
-    "Social/Personality", 
-    "Social/Personality journal 1", 
-    "Social/Personality journal 2", 
-    "Social/Personality journal 3", 
-    "Social/Personality journal 4", 
-    "Social/Personality journal 5"                   
-  ),
-  label = fct_rev(label)) |>
-  mutate(outcome = case_when(outcome == "directbehavioral" ~ "Behavioral measure",
-                             outcome == "behavioralproxy" ~ "Behavioral proxy",
-                             outcome == "selfreportsaboutbehavior" ~ "Self-report about behavior",
-                             outcome == "mixed" ~ "Mixed self-report about behavior",
-                             outcome == "selfreport" ~ "Self-report measure",
-                             outcome == "cognitiveability" ~ "Cognitive ability",
-                             outcome == "neurophys" ~ "Neurophysiological",
-                             TRUE ~ outcome),
-         outcome = fct_relevel(outcome,
-                               "Behavioral measure",
-                               "Behavioral proxy",
-                               "Self-report about behavior",
-                               "Mixed self-report about behavior",
-                               "Self-report measure",
-                               "Cognitive ability",
-                               "Neurophysiological"),
-         outcome = fct_rev(outcome),
-         subfield = fct_relevel(subfield,
-                                "hypothetical typical subfield",
-                                "Clinical",
-                                "Cognitive",
-                                "Developmental",
-                                "General",
-                                "I/O",
-                                "Social/Personality")) |>
-  select(outcome, label, re_level, subfield, journal, 
-         prevalence_estimate, prevalence_ci_lower, prevalence_ci_upper) |>
-  arrange(outcome, subfield)
-
 
 # print table
-res_prevalence |>
+posterior_prevalence |>
   mutate_if(is.numeric, round_half_up, digits = 3) |>
   kable() |>
   kable_classic(full_width = FALSE)
@@ -720,7 +727,7 @@ res_prevalence |>
 
 ```{r fig.height=6, fig.width=11}
 
-p_prevalence_subfields <- res_prevalence |>
+p_prevalence_subfields <- posterior_prevalence |>
   filter(re_level != "journals") |>
   ggplot(aes(prevalence_estimate, outcome)) +
   geom_rect(aes(xmin = 0.00, xmax = 0.05, ymin = -Inf, ymax = Inf, color = NULL),
@@ -733,11 +740,11 @@ p_prevalence_subfields <- res_prevalence |>
             fill = "grey90") +
   geom_rect(aes(xmin = 0.50, xmax = 1.00, ymin = -Inf, ymax = Inf, color = NULL),
             fill = "grey95") +
-  annotate("text", x = 0.0250, y = "Mixed self-report about behavior", label = "Rare",       size = 4, color = "grey30", angle = 90) +
-  annotate("text", x = 0.0725, y = "Mixed self-report about behavior", label = "Uncommon",   size = 4, color = "grey40", angle = 90) +
-  annotate("text", x = 0.1750, y = "Mixed self-report about behavior", label = "Occasional", size = 4, color = "grey50", angle = 90) +
-  annotate("text", x = 0.3750, y = "Mixed self-report about behavior", label = "Common",     size = 4, color = "grey60", angle = 90) +
-  annotate("text", x = 0.7500, y = "Mixed self-report about behavior", label = "Frequent",   size = 4, color = "grey65", angle = 90) +
+  annotate("text", x = 0.0250, y = "Mixed Self-Report", label = "Rare",       size = 4, color = "grey30", angle = 90) +
+  annotate("text", x = 0.0725, y = "Mixed Self-Report", label = "Uncommon",   size = 4, color = "grey40", angle = 90) +
+  annotate("text", x = 0.1750, y = "Mixed Self-Report", label = "Occasional", size = 4, color = "grey50", angle = 90) +
+  annotate("text", x = 0.3750, y = "Mixed Self-Report", label = "Common",     size = 4, color = "grey60", angle = 90) +
+  annotate("text", x = 0.7500, y = "Mixed Self-Report", label = "Frequent",   size = 4, color = "grey65", angle = 90) +
   geom_linerangeh(aes(xmin = prevalence_ci_lower, xmax = prevalence_ci_upper), position = position_dodge(width = .7)) +
   geom_point(position = position_dodge(width = .7)) +
   coord_cartesian(xlim = c(0, 1)) +
@@ -764,205 +771,236 @@ quicksave("p_prevalence_subfields", 11, 6)
 
 #### Journals
 
-```{r fig.height=12, fig.width=9}
+```{r fig.height=18, fig.width=9}
 
-p_prevalence_journals <- res_prevalence |>
+# p_prevalence_journals <- posterior_prevalence |>
+#   filter(re_level == "journals") |>
+#   ggplot(aes(prevalence_estimate, label, color = outcome)) +
+#   geom_linerangeh(aes(xmin = prevalence_ci_lower, xmax = prevalence_ci_upper), position = position_dodge(width = .8)) +
+#   geom_point(position = position_dodge(width = .8)) +
+#   coord_cartesian(xlim = c(0, 1)) +
+#   theme_linedraw() +
+#   ylab("") +
+#   xlab("Prevalence") +
+#   guides(color = guide_legend(title = "Measure type",
+#                               reverse = TRUE))
+
+p_prevalence_journals <- posterior_prevalence |>
   filter(re_level == "journals") |>
-  ggplot(aes(prevalence_estimate, label, color = outcome)) +
-  geom_linerangeh(aes(xmin = prevalence_ci_lower, xmax = prevalence_ci_upper), position = position_dodge(width = .8)) +
-  geom_point(position = position_dodge(width = .8)) +
+  mutate(label = fct_relevel(label, sort(levels(label))),
+         label = fct_rev(label),
+         outcome = fct_relevel(outcome, 
+                               "Direct Behavioral Measure",		
+                               "Behavioral Proxy",
+                               "Self-Report about Behavior",
+                               "Mixed Self-Report",
+                               "Self-Report about Subjective Experience",
+                               "Neurophysiological",
+                               "Cognitive Ability")) |>
+  ggplot(aes(prevalence_estimate, label)) +
+  geom_linerangeh(aes(xmin = prevalence_ci_lower, xmax = prevalence_ci_upper)) +
+  geom_point() +
   coord_cartesian(xlim = c(0, 1)) +
   theme_linedraw() +
   ylab("") +
   xlab("Prevalence") +
   guides(color = guide_legend(title = "Measure type",
-                              reverse = TRUE))
+                              reverse = TRUE)) +
+  facet_wrap(~ outcome, ncol = 2)
 
 p_prevalence_journals
 
-quicksave("p_prevalence_journals", 9, 12)
+quicksave("p_prevalence_journals", 9, 18)
 
 ```
 
-### Trend
+### Trend \TODO
+
+\TODO each level has identical estimates, so the random effect is not being taken into account
+
+\TODO add detectable trend from below back here so that color of points change or sth
 
 ```{r}
 
-# field
-est_trend_grandmean <- function(fit, outcome){
-  fit |>
-    emtrends(specs = ~ year_centered,
-             var = "year_centered",
-             at = list(year_centered = 0),
-             epred = TRUE,
-             re_formula = NA,
-             allow_new_levels = FALSE,
-             resp = outcome) |>
-    summary() |>
-    mutate(outcome = outcome) |>
-    select(trend_estimate = year_centered.trend,
-           trend_ci_lower = lower.HPD,
-           trend_ci_upper = upper.HPD)
+if(exists("models/posterior_trends.rds")){
+  posterior_trends <- read_rds("models/posterior_trends.rds")
+} else {
+  
+  # field
+  est_trend_grandmean <- function(fit, outcome){
+    fit |>
+      emtrends(specs = ~ year_centered,
+               var = "year_centered",
+               at = list(year_centered = 0),
+               epred = TRUE,
+               re_formula = NA,
+               allow_new_levels = FALSE,
+               resp = outcome) |>
+      summary() |>
+      mutate(outcome = outcome) |>
+      select(trend_estimate = year_centered.trend,
+             trend_ci_lower = lower.HPD,
+             trend_ci_upper = upper.HPD)
+  }
+  
+  posterior_trend_field <- 
+    expand_grid(outcome = outcome_measures) |>
+    tibble(res = pmap(list(outcome), 
+                      est_trend_grandmean, 
+                      fit = fitted_model)) |>
+    unnest(res) |>
+    mutate(re_level = "field",
+           subfield = "hypothetical typical subfield", 
+           journal = "hypothetical typical journal")
+  
+  
+  # estimate prevalence for either an existing subfield and journal, or an existing subfield and hypothetical journal, or hypothetical subfield and journal
+  est_trend <- function(outcome, subfield, journal, fit){
+    fit |>
+      emtrends(specs = ~ 1,
+               var = "year_centered",
+               at = list(year_centered = 0,
+                         subfield = subfield,
+                         journal = journal),
+               epred = TRUE,
+               re_formula = NA,
+               allow_new_levels = TRUE,
+               sample_new_levels = "uncertainty",
+               resp = outcome) |>
+      summary() |>
+      mutate(outcome = outcome) |>
+      select(trend_estimate = year_centered.trend,
+             trend_ci_lower = lower.HPD,
+             trend_ci_upper = upper.HPD)
+  }
+  
+  helper_function_trend <- function(outcome, subfield, journal, fit){
+    tibble(outcome = outcome,
+           subfield = subfield,
+           journal = journal) |>
+      mutate(res = pmap(list(outcome,
+                             subfield,
+                             journal,
+                             list(fit)),
+                        est_trend)) |>
+      unnest(cols = c(res)) |>
+      select(-outcome, -subfield, -journal)
+  }
+  
+  # subfields
+  posterior_trend_subfields <- 
+    expand_grid(outcome = outcome_measures,
+                data_centered |>
+                  distinct(subfield),
+                journal = "hypothetical typical journal") |>
+    mutate(res = pmap(list(outcome, subfield, journal), 
+                      helper_function_trend, 
+                      fit = fitted_model)) |>
+    unnest() |>
+    mutate(re_level = "subfields")
+  
+  # journals
+  posterior_trend_journals <- 
+    expand_grid(outcome = outcome_measures,
+                data_centered |>
+                  distinct(subfield, journal)) |>
+    mutate(res = pmap(list(outcome, subfield, journal), 
+                      helper_function_trend, 
+                      fit = fitted_model)) |>
+    unnest() |>
+    mutate(re_level = "journals")
+  
+  # combine
+  posterior_trends <- 
+    bind_rows(posterior_trend_field,
+              posterior_trend_subfields,
+              posterior_trend_journals) |>
+    mutate(subfield = ifelse(is.na(subfield), "", subfield),
+           journal = ifelse(is.na(journal), "", journal)) |>
+    mutate(label = case_when(re_level == "field" ~ "Psychology",
+                             re_level == "subfields" & journal == "hypothetical typical journal" ~ subfield,
+                             journal != "hypothetical typical journal" & !is.na(journal) ~ journal)) |>
+    mutate(label = fct_relevel(
+      label,
+      "Psychology", 
+      
+      "General", 
+      "General journal 2", 
+      "General journal 3", 
+      "General journal 4", 
+      "General journal 5", 
+      "General journal 1", 
+      
+      "Cognitive", 
+      "Cognitive journal 2", 
+      "Cognitive journal 3", 
+      "Cognitive journal 4", 
+      "Cognitive journal 5", 
+      "Cognitive journal 1", 
+      
+      "Clinical", 
+      "Clinical journal 3", 
+      "Clinical journal 4", 
+      "Clinical journal 5", 
+      "Clinical journal 1", 
+      "Clinical journal 2", 
+      
+      "Developmental", 
+      "Developmental journal 4", 
+      "Developmental journal 5", 
+      "Developmental journal 1", 
+      "Developmental journal 2", 
+      "Developmental journal 3", 
+      
+      "I/O", 
+      "I/O journal 5", 
+      "I/O journal 1", 
+      "I/O journal 2", 
+      "I/O journal 3", 
+      "I/O journal 4", 
+      
+      "Social/Personality", 
+      "Social/Personality journal 1", 
+      "Social/Personality journal 2", 
+      "Social/Personality journal 3", 
+      "Social/Personality journal 4", 
+      "Social/Personality journal 5"                   
+    ),
+    label = fct_rev(label)) |>
+    mutate(outcome = case_when(outcome == "directbehavioral" ~ "Direct Behavioral Measure",		
+                               outcome == "behavioralproxy" ~ "Behavioral Proxy",
+                               outcome == "selfreportsaboutbehavior" ~ "Self-Report about Behavior",
+                               outcome == "mixed" ~ "Mixed Self-Report",
+                               outcome == "selfreport" ~ "Self-Report about Subjective Experience",
+                               outcome == "neurophys" ~ "Neurophysiological",
+                               outcome == "cognitiveability" ~ "Cognitive Ability",
+                               TRUE ~ outcome),
+           outcome = fct_relevel(outcome, 
+                                 "Direct Behavioral Measure",		
+                                 "Behavioral Proxy",
+                                 "Self-Report about Behavior",
+                                 "Mixed Self-Report",
+                                 "Self-Report about Subjective Experience",
+                                 "Neurophysiological",
+                                 "Cognitive Ability"),
+           outcome = fct_rev(outcome),
+           subfield = fct_relevel(subfield,
+                                  "hypothetical typical subfield",
+                                  "Clinical",
+                                  "Cognitive",
+                                  "Developmental",
+                                  "General",
+                                  "I/O",
+                                  "Social/Personality")) |>
+    select(outcome, label, re_level, subfield, journal, 
+           trend_estimate, trend_ci_lower, trend_ci_upper) |>
+    arrange(outcome, subfield)
+  
+  write_rds(posterior_trends, "models/posterior_trends.rds")
 }
-
-res_trend_field <- 
-  expand_grid(outcome = outcome_measures) |>
-  tibble(res = pmap(list(outcome), 
-                    est_trend_grandmean, 
-                    fit = fitted_model)) |>
-  unnest(res) |>
-  mutate(re_level = "field",
-         subfield = "hypothetical typical subfield", 
-         journal = "hypothetical typical journal")
-
-
-# estimate prevalence for either an existing subfield and journal, or an existing subfield and hypothetical journal, or hypothetical subfield and journal
-est_trend <- function(outcome, subfield, journal, fit){
-  fit |>
-    emtrends(specs = ~ 1,
-             var = "year_centered",
-             at = list(year_centered = 0,
-                       subfield = subfield,
-                       journal = journal),
-             epred = TRUE,
-             re_formula = NA,
-             allow_new_levels = TRUE,
-             sample_new_levels = "uncertainty",
-             resp = outcome) |>
-    summary() |>
-    mutate(outcome = outcome) |>
-    select(trend_estimate = year_centered.trend,
-           trend_ci_lower = lower.HPD,
-           trend_ci_upper = upper.HPD)
-}
-
-helper_function_trend <- function(outcome, subfield, journal, fit){
-  tibble(outcome = outcome,
-         subfield = subfield,
-         journal = journal) |>
-    mutate(res = pmap(list(outcome,
-                           subfield,
-                           journal,
-                           list(fit)),
-                      est_trend)) |>
-    unnest(cols = c(res)) |>
-    select(-outcome, -subfield, -journal)
-}
-
-# subfields
-res_trend_subfields <- 
-  expand_grid(outcome = outcome_measures,
-              data_centered |>
-                distinct(subfield),
-              journal = "hypothetical typical journal") |>
-  mutate(res = pmap(list(outcome, subfield, journal), 
-                    helper_function_trend, 
-                    fit = fitted_model)) |>
-  unnest() |>
-  mutate(re_level = "subfields")
-
-# journals
-res_trend_journals <- 
-  expand_grid(outcome = outcome_measures,
-              data_centered |>
-                distinct(subfield, journal)) |>
-  mutate(res = pmap(list(outcome, subfield, journal), 
-                    helper_function_trend, 
-                    fit = fitted_model)) |>
-  unnest() |>
-  mutate(re_level = "journals")
-
-# combine
-res_trends <- 
-  bind_rows(res_trend_field,
-            res_trend_subfields,
-            res_trend_journals) |>
-  mutate(subfield = ifelse(is.na(subfield), "", subfield),
-         journal = ifelse(is.na(journal), "", journal)) |>
-  mutate(label = case_when(re_level == "field" ~ "Psychology",
-                           re_level == "subfields" & journal == "hypothetical typical journal" ~ subfield,
-                           journal != "hypothetical typical journal" & !is.na(journal) ~ journal)) |>
-  mutate(label = fct_relevel(
-    label,
-    "Psychology", 
-
-    "General", 
-    "General journal 2", 
-    "General journal 3", 
-    "General journal 4", 
-    "General journal 5", 
-    "General journal 1", 
-    
-    "Cognitive", 
-    "Cognitive journal 2", 
-    "Cognitive journal 3", 
-    "Cognitive journal 4", 
-    "Cognitive journal 5", 
-    "Cognitive journal 1", 
-    
-    "Clinical", 
-    "Clinical journal 3", 
-    "Clinical journal 4", 
-    "Clinical journal 5", 
-    "Clinical journal 1", 
-    "Clinical journal 2", 
-    
-    "Developmental", 
-    "Developmental journal 4", 
-    "Developmental journal 5", 
-    "Developmental journal 1", 
-    "Developmental journal 2", 
-    "Developmental journal 3", 
-    
-    "I/O", 
-    "I/O journal 5", 
-    "I/O journal 1", 
-    "I/O journal 2", 
-    "I/O journal 3", 
-    "I/O journal 4", 
-    
-    "Social/Personality", 
-    "Social/Personality journal 1", 
-    "Social/Personality journal 2", 
-    "Social/Personality journal 3", 
-    "Social/Personality journal 4", 
-    "Social/Personality journal 5"                   
-  ),
-  label = fct_rev(label)) |>
-  mutate(outcome = case_when(outcome == "directbehavioral" ~ "Behavioral measure",
-                             outcome == "behavioralproxy" ~ "Behavioral proxy",
-                             outcome == "selfreportsaboutbehavior" ~ "Self-report about behavior",
-                             outcome == "mixed" ~ "Mixed self-report about behavior",
-                             outcome == "selfreport" ~ "Self-report measure",
-                             outcome == "cognitiveability" ~ "Cognitive ability",
-                             outcome == "neurophys" ~ "Neurophysiological",
-                             TRUE ~ outcome),
-         outcome = fct_relevel(outcome,
-                               "Behavioral measure",
-                               "Behavioral proxy",
-                               "Self-report about behavior",
-                               "Mixed self-report about behavior",
-                               "Self-report measure",
-                               "Cognitive ability",
-                               "Neurophysiological"),
-         outcome = fct_rev(outcome),
-         subfield = fct_relevel(subfield,
-                                "hypothetical typical subfield",
-                                "Clinical",
-                                "Cognitive",
-                                "Developmental",
-                                "General",
-                                "I/O",
-                                "Social/Personality")) |>
-  select(outcome, label, re_level, subfield, journal, 
-         trend_estimate, trend_ci_lower, trend_ci_upper) |>
-  mutate(detectable = case_when(trend_ci_lower > 0 ~ TRUE,
-                                trend_ci_upper < 0 ~ TRUE,
-                                TRUE ~ FALSE)) |>
-  arrange(outcome, subfield)
 
 # print table
-res_trends |>
+posterior_trends |>
   mutate_if(is.numeric, round_half_up, digits = 3) |>
   kable() |>
   kable_classic(full_width = FALSE)
@@ -971,34 +1009,81 @@ res_trends |>
 
 #### Field + Subfields
 
-```{r fig.height=4.5, fig.width=9}
+```{r fig.height=6, fig.width=11}
 
-p_trend_subfields <- res_trends |>
+# p_trend_subfields <- posterior_trends |>
+#   filter(re_level != "journals") |>
+#   ggplot(aes(trend_estimate, label, color = outcome)) +
+#   geom_linerangeh(aes(xmin = trend_ci_lower, xmax = trend_ci_upper), position = position_dodge(width = .8)) +
+#   geom_point(position = position_dodge(width = .8)) +
+#   coord_cartesian(xlim = c(-.1, .1)) +
+#   theme_linedraw() +
+#   ylab("") +
+#   xlab("Trend (change per year)") +
+#   scale_x_continuous(labels = scales::label_percent(), breaks = breaks_pretty()) +
+#   guides(color = guide_legend(title = "Measure type",
+#                               reverse = TRUE))
+
+p_trend_subfields <- posterior_trends |>
   filter(re_level != "journals") |>
-  ggplot(aes(trend_estimate, label, color = outcome)) +
-  geom_linerangeh(aes(xmin = trend_ci_lower, xmax = trend_ci_upper), position = position_dodge(width = .8)) +
-  geom_point(position = position_dodge(width = .8)) +
+  mutate(label = fct_relevel(label,
+                             "Psychology",
+                             "General",
+                             "Clinical",
+                             "Cognitive",
+                             "Developmental",
+                             "I/O",
+                             "Social/Personality")) |>
+  ggplot(aes(trend_estimate, outcome)) +
+  geom_linerangeh(aes(xmin = trend_ci_lower, xmax = trend_ci_upper)) +
+  geom_point() +
   coord_cartesian(xlim = c(-.1, .1)) +
   theme_linedraw() +
   ylab("") +
   xlab("Trend (change per year)") +
   scale_x_continuous(labels = scales::label_percent(), breaks = breaks_pretty()) +
   guides(color = guide_legend(title = "Measure type",
-                              reverse = TRUE))
+                              reverse = TRUE)) +
+  facet_wrap(~ label, ncol = 2)
 
 p_trend_subfields
 
-quicksave("p_trend_subfields", 9, 4.5)
+quicksave("p_trend_subfields", 11, 6)
 
 ```
 
 #### Journals
 
-```{r fig.height=12, fig.width=9}
+```{r fig.height=18, fig.width=9}
 
-p_trend_journals <- res_trends |>
+# p_trend_journals <- posterior_trends |>
+#   filter(re_level == "journals") |>
+#   mutate(label = fct_relevel(label, sort(levels(label))),
+#          label = fct_rev(label),
+#          outcome = fct_relevel(outcome, 
+#                                "Direct Behavioral Measure",		
+#                                "Behavioral Proxy",
+#                                "Self-Report about Behavior",
+#                                "Mixed Self-Report",
+#                                "Self-Report about Subjective Experience",
+#                                "Neurophysiological",
+#                                "Cognitive Ability")) |>
+#   ggplot(aes(trend_estimate, label, color = outcome)) +
+#   geom_linerangeh(aes(xmin = trend_ci_lower, xmax = trend_ci_upper), position = position_dodge(width = .8)) +
+#   geom_point(position = position_dodge(width = .8)) +
+#   coord_cartesian(xlim = c(-.1, .1)) +
+#   theme_linedraw() +
+#   ylab("") +
+#   xlab("Trend (change per year)") +
+#   scale_x_continuous(labels = scales::label_percent(), breaks = breaks_pretty()) +
+#   guides(color = guide_legend(title = "Measure type",
+#                               reverse = TRUE))
+
+p_trend_journals <- posterior_trends |>
   filter(re_level == "journals") |>
-  ggplot(aes(trend_estimate, label, color = outcome)) +
+  mutate(label = fct_relevel(label, sort(levels(label))),
+         label = fct_rev(label)) |>
+  ggplot(aes(trend_estimate, label)) +
   geom_linerangeh(aes(xmin = trend_ci_lower, xmax = trend_ci_upper), position = position_dodge(width = .8)) +
   geom_point(position = position_dodge(width = .8)) +
   coord_cartesian(xlim = c(-.1, .1)) +
@@ -1007,11 +1092,12 @@ p_trend_journals <- res_trends |>
   xlab("Trend (change per year)") +
   scale_x_continuous(labels = scales::label_percent(), breaks = breaks_pretty()) +
   guides(color = guide_legend(title = "Measure type",
-                              reverse = TRUE))
+                              reverse = TRUE)) +
+  facet_wrap(~ outcome, ncol = 2)
 
 p_trend_journals
 
-quicksave("p_trend_journals", 9, 12)
+quicksave("p_trend_journals", 9, 18)
 
 ```
 
@@ -1033,43 +1119,78 @@ data_summary_field <- data_centered |>
                names_to = "outcome",
                values_to = "used") |>
   group_by(year, outcome) |>
-  summarize(proportion = mean(used))
+  summarize(proportion = mean(used)) |>
+  mutate(outcome = case_when(outcome == "directbehavioral" ~ "Direct Behavioral Measure",		
+                             outcome == "behavioralproxy" ~ "Behavioral Proxy",
+                             outcome == "selfreportsaboutbehavior" ~ "Self-Report about Behavior",
+                             outcome == "mixed" ~ "Mixed Self-Report",
+                             outcome == "selfreport" ~ "Self-Report about Subjective Experience",
+                             outcome == "neurophys" ~ "Neurophysiological",
+                             outcome == "cognitiveability" ~ "Cognitive Ability"),
+         outcome = fct_relevel(outcome, 
+                               "Direct Behavioral Measure",		
+                               "Behavioral Proxy",
+                               "Self-Report about Behavior",
+                               "Mixed Self-Report",
+                               "Self-Report about Subjective Experience",
+                               "Neurophysiological",
+                               "Cognitive Ability"))
 
-# adjust the previously used function to fit for specific values of year_centered
-est_prevalence_grandmean_year <- function(outcome, year_centered, fit){
-  fit |>
-    emmeans(specs = ~ 1,
-            at = list(year_centered = year_centered),
-            epred = TRUE,
-            re_formula = NA,
-            allow_new_levels = FALSE,
-            resp = outcome) |>
-    summary() |>
-    select(prevalence_estimate = emmean,
-           prevalence_ci_lower = lower.HPD,
-           prevalence_ci_upper = upper.HPD)
+if(exists("models/posterior_prevalence_field_year.rds")){
+  posterior_prevalence_field_year <- read_rds("models/posterior_prevalence_field_year.rds")
+} else {
+  # adjust the previously used function to fit for specific values of year_centered
+  est_prevalence_grandmean_year <- function(outcome, year_centered, fit){
+    fit |>
+      emmeans(specs = ~ 1,
+              at = list(year_centered = year_centered),
+              epred = TRUE,
+              re_formula = NA,
+              allow_new_levels = FALSE,
+              resp = outcome) |>
+      summary() |>
+      select(prevalence_estimate = emmean,
+             prevalence_ci_lower = lower.HPD,
+             prevalence_ci_upper = upper.HPD)
+  }
+  
+  posterior_prevalence_field_year <- 
+    expand_grid(outcome = outcome_measures,
+                year_centered = year_centered_values) |>
+    mutate(res = pmap(list(outcome,
+                           year_centered),
+                      est_prevalence_grandmean_year,
+                      fit = fitted_model)) |>
+    unnest(res) |>
+    mutate(re_level = "field",
+           subfield = "hypothetical typical subfield", 
+           journal = "hypothetical typical journal") |>
+    left_join(data_centered |>
+                distinct(year, year_centered),
+              by = "year_centered") |>
+    mutate(outcome = case_when(outcome == "directbehavioral" ~ "Direct Behavioral Measure",		
+                               outcome == "behavioralproxy" ~ "Behavioral Proxy",
+                               outcome == "selfreportsaboutbehavior" ~ "Self-Report about Behavior",
+                               outcome == "mixed" ~ "Mixed Self-Report",
+                               outcome == "selfreport" ~ "Self-Report about Subjective Experience",
+                               outcome == "neurophys" ~ "Neurophysiological",
+                               outcome == "cognitiveability" ~ "Cognitive Ability"),
+           outcome = fct_relevel(outcome, 
+                                 "Direct Behavioral Measure",		
+                                 "Behavioral Proxy",
+                                 "Self-Report about Behavior",
+                                 "Mixed Self-Report",
+                                 "Self-Report about Subjective Experience",
+                                 "Neurophysiological",
+                                 "Cognitive Ability"))
+  
+  write_rds(posterior_prevalence_field_year, "models/posterior_prevalence_field_year.rds")
 }
-
-res_prevalence_field_year <- 
-  expand_grid(outcome = outcome_measures,
-              year_centered = year_centered_values) |>
-  mutate(res = pmap(list(outcome,
-                         year_centered),
-                    est_prevalence_grandmean_year,
-                    fit = fitted_model)) |>
-  unnest(res) |>
-  mutate(re_level = "field",
-         subfield = "hypothetical typical subfield", 
-         journal = "hypothetical typical journal") |>
-  left_join(data_centered |>
-              distinct(year, year_centered),
-            by = "year_centered")
-
 
 # plot
 p_prevalence_and_trend_field <- ggplot() +
-  geom_ribbon(data = res_prevalence_field_year, aes(year, ymin = prevalence_ci_lower, ymax = prevalence_ci_upper), fill = "skyblue", alpha = 0.5) +
-  geom_smooth(data = res_prevalence_field_year, aes(year, prevalence_estimate),
+  geom_ribbon(data = posterior_prevalence_field_year, aes(year, ymin = prevalence_ci_lower, ymax = prevalence_ci_upper), fill = "skyblue", alpha = 0.5) +
+  geom_smooth(data = posterior_prevalence_field_year, aes(year, prevalence_estimate),
               method = "lm", color = "black", size = 0.75, se = FALSE) +
   geom_point(data = data_summary_field, aes(year, proportion), size = 1) +
   theme_linedraw() +
@@ -1088,7 +1209,7 @@ quicksave("p_prevalence_and_trend_field", 9, 8)
 
 ### Subfields
 
-```{r fig.height=12, fig.width=12}
+```{r fig.height=8, fig.width=12}
 
 # calculate empirical means
 data_summary_subfields <- data_centered |>
@@ -1103,53 +1224,88 @@ data_summary_subfields <- data_centered |>
                values_to = "used") |>
   group_by(subfield, year, outcome) |>
   summarize(proportion = mean(used)) |>
-  pivot_wider(names_from = outcome,
-              values_from = proportion)
+  # pivot_wider(names_from = outcome,
+  #             values_from = proportion) |>
+  mutate(outcome = case_when(outcome == "directbehavioral" ~ "Direct Behavioral Measure",		
+                             outcome == "behavioralproxy" ~ "Behavioral Proxy",
+                             outcome == "selfreportsaboutbehavior" ~ "Self-Report about Behavior",
+                             outcome == "mixed" ~ "Mixed Self-Report",
+                             outcome == "selfreport" ~ "Self-Report about\nSubjective Experience",
+                             outcome == "neurophys" ~ "Neurophysiological",
+                             outcome == "cognitiveability" ~ "Cognitive Ability"),
+         outcome = fct_relevel(outcome, 
+                               "Direct Behavioral Measure",		
+                               "Behavioral Proxy",
+                               "Self-Report about Behavior",
+                               "Mixed Self-Report",
+                               "Self-Report about\nSubjective Experience",
+                               "Neurophysiological",
+                               "Cognitive Ability"))
 
-# adjust the previously used function to fit for specific values of year_centered
-est_prevalence_subfield_year <- function(outcome, subfield, journal, year_centered, fit){
-  fit |>
-    emmeans(specs = ~ 1,
-            at = list(year_centered = year_centered,
-                      subfield = subfield,
-                      journal = journal),
-            epred = TRUE,
-            re_formula = NULL,
-            allow_new_levels = TRUE,
-            sample_new_levels = "uncertainty",
-            rg.limit = 40000,
-            resp = outcome) |>
-    summary() |>
-    select(prevalence_estimate = emmean,
-           prevalence_ci_lower = lower.HPD,
-           prevalence_ci_upper = upper.HPD)
+if(exists("models/posterior_prevalence_subfield_year.rds")){
+  posterior_prevalence_subfield_year <- read_rds("models/posterior_prevalence_subfield_year.rds")
+} else {
+  # adjust the previously used function to fit for specific values of year_centered
+  est_prevalence_subfield_year <- function(outcome, subfield, journal, year_centered, fit){
+    fit |>
+      emmeans(specs = ~ 1,
+              at = list(year_centered = year_centered,
+                        subfield = subfield,
+                        journal = journal),
+              epred = TRUE,
+              re_formula = NULL,
+              allow_new_levels = TRUE,
+              sample_new_levels = "uncertainty",
+              rg.limit = 40000,
+              resp = outcome) |>
+      summary() |>
+      select(prevalence_estimate = emmean,
+             prevalence_ci_lower = lower.HPD,
+             prevalence_ci_upper = upper.HPD)
+  }
+  
+  posterior_prevalence_subfield_year <- 
+    expand_grid(outcome = outcome_measures,
+                data_centered |>
+                  distinct(subfield),
+                journal = "hypothetical typical journal",
+                year_centered = year_centered_values) |>
+    mutate(res = pmap(list(outcome,
+                           subfield,
+                           journal,
+                           year_centered),
+                      est_prevalence_subfield_year,
+                      fit = fitted_model)) |>
+    unnest(res) |>
+    mutate(re_level = "subfields") |>
+    left_join(data_centered |>
+                distinct(year, year_centered),
+              by = "year_centered") |>
+    mutate(outcome = case_when(outcome == "directbehavioral" ~ "Direct Behavioral Measure",		
+                               outcome == "behavioralproxy" ~ "Behavioral Proxy",
+                               outcome == "selfreportsaboutbehavior" ~ "Self-Report about Behavior",
+                               outcome == "mixed" ~ "Mixed Self-Report",
+                               outcome == "selfreport" ~ "Self-Report about/nSubjective Experience",
+                               outcome == "neurophys" ~ "Neurophysiological",
+                               outcome == "cognitiveability" ~ "Cognitive Ability"),
+           outcome = fct_relevel(outcome, 
+                                 "Direct Behavioral Measure",		
+                                 "Behavioral Proxy",
+                                 "Self-Report about Behavior",
+                                 "Mixed Self-Report",
+                                 "Self-Report about\nSubjective Experience",
+                                 "Neurophysiological",
+                                 "Cognitive Ability"))
+  
+  write_rds(posterior_prevalence_subfield_year, "models/posterior_prevalence_subfield_year.rds")
 }
-
-
-res_prevalence_subfield_year <- 
-  expand_grid(outcome = outcome_measures,
-              data_centered |>
-                distinct(subfield),
-              journal = "hypothetical typical journal",
-              year_centered = year_centered_values) |>
-  mutate(res = pmap(list(outcome,
-                         subfield,
-                         journal,
-                         year_centered),
-                    est_prevalence_subfield_year,
-                    fit = fitted_model)) |>
-  unnest(res) |>
-  mutate(re_level = "subfields") |>
-  left_join(data_centered |>
-              distinct(year, year_centered),
-            by = "year_centered")
 
 # plot
 p_prevalence_and_trend_subfields <- ggplot() +
-  geom_ribbon(data = res_prevalence_field_year, aes(year, ymin = prevalence_ci_lower, ymax = prevalence_ci_upper), fill = "skyblue", alpha = 0.5) +
-  geom_smooth(data = res_prevalence_field_year, aes(year, prevalence_estimate),
+  geom_ribbon(data = posterior_prevalence_subfield_year, aes(year, ymin = prevalence_ci_lower, ymax = prevalence_ci_upper), fill = "skyblue", alpha = 0.5) +
+  geom_smooth(data = posterior_prevalence_subfield_year, aes(year, prevalence_estimate),
               method = "lm", color = "black", size = 0.75, se = FALSE) +
-  geom_point(data = data_summary_field, aes(year, proportion), size = 1) +
+  geom_point(data = data_summary_subfields, aes(year, proportion), size = 1) +
   theme_linedraw() +
   #scale_x_continuous(breaks = c(2010, 2012, 2014, 2016, 2018, 2020, 2022)) +
   scale_x_continuous(breaks = c(2010, 2014, 2018, 2022)) +
@@ -1161,7 +1317,7 @@ p_prevalence_and_trend_subfields <- ggplot() +
 
 p_prevalence_and_trend_subfields
 
-quicksave("p_prevalence_and_trend_subfields", 12, 12)
+quicksave("p_prevalence_and_trend_subfields", 12, 8)
 
 ```
 
@@ -1230,6 +1386,49 @@ p_years_field + watermark()
 ```{r fig.height=8, fig.width=9}
 
 p_years_subfields + watermark()
+
+```
+
+# Combined table with summary conclusions \TODO
+
+categorical conclusions for field, subfield, and journal levels based on prevalence category and trend (detectably increasing/decreasing, no detectable change)
+
+```{r}
+
+rnd <- function(x, digits = 2) {
+  # Round the number to the specified number of digits
+  rounded_number <- round_half_up(x, digits)
+  
+  # Format the number as a string, retaining trailing zeros
+  formatted_number <- sprintf(paste0("%.", digits, "f"), rounded_number)
+  
+  return(formatted_number)
+}
+
+posterior_prevalence_and_trends <- 
+  full_join(posterior_prevalence, 
+            posterior_trends,
+            by = c("outcome", "label", "re_level", "subfield", "journal")) |>
+  mutate(prevalence_category = case_when(prevalence_estimate < .05 ~ "Rare",
+                                         prevalence_estimate >= .05 & prevalence_estimate < .10 ~ "Uncommon",
+                                         prevalence_estimate >= .10 & prevalence_estimate < .25 ~ "Occasional",
+                                         prevalence_estimate >= .25 & prevalence_estimate < .50 ~ "Common",
+                                         prevalence_estimate >= .50 ~ "Frequent"),
+         trend_category = case_when(trend_ci_lower > 0 ~ "Increasing",
+                                    trend_ci_upper < 0 ~ "Decreasing",
+                                    TRUE ~ "No trend detected"),
+         combined_category = paste(prevalence_category, "and", trend_category),
+         prevalence_results = paste0(rnd(prevalence_estimate), " 95% CI [", rnd(prevalence_ci_lower), ", ", rnd(prevalence_ci_upper), "]"),
+         trend_results = paste0(rnd(trend_estimate), " 95% CI [", rnd(trend_ci_lower), ", ", rnd(trend_ci_upper), "]")) 
+
+write_csv(posterior_prevalence_and_trends, "../../data/registered report/results/posterior_prevalence_and_trends.csv")
+
+posterior_prevalence_and_trends |>
+  filter(!str_detect(label, "journal")) |>
+  arrange(desc(label), desc(outcome)) |>
+  select(label, outcome, prevalence_category, trend_category, prevalence_results, trend_results) |>
+  kable() |>
+  kable_classic(full_width = FALSE)
 
 ```
 
