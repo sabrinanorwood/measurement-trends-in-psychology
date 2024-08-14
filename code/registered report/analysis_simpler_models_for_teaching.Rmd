@@ -12,6 +12,8 @@ output:
     toc_float: yes
 ---
 
+NOTE THIS IS SIMPLER / MORE EXPLICIT IN MANY WAYS, BUT USES EMMEANS NOT MARGINALEFFECTS
+
 # \TODO
 
 - separate models for other DVs or one combined model? if combined, can i do direct comparisons between them?
