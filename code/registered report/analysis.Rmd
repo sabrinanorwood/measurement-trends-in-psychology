@@ -1338,74 +1338,6 @@ quicksave("p_prevalence_and_trend_subfields", 12, 8)
 
 ```
 
-### Watermark simulated data plots 
-
-```{r fig.height=6, fig.width=5}
-
-library(grid)
-
-watermark <- function(fontsize = 20){
-  annotation_custom(
-    grob = textGrob(label = "Simulated data",
-                    gp = gpar(fontsize = fontsize, 
-                              col = "red", 
-                              alpha = 0.5), 
-                    rot = 30),
-    xmin = -Inf, xmax = Inf,
-    ymin = -Inf, ymax = Inf
-  )
-}
-
-```
-
-#### Correlations
-
-```{r fig.height=6, fig.width=6}
-
-p_cors_field_intercept + watermark(30)
-
-p_cors_field_slope + watermark(30)
-
-# p_cors_journal_intercept + watermark(30)
-# 
-# p_cors_journal_slope + watermark(30)
-
-```
-
-#### Prevalences
-
-```{r fig.height=4.5, fig.width=9}
-
-p_prevalence_subfields + watermark(30)
-
-p_trend_subfields + watermark(30)
-
-```
-
-#### Trends
-
-```{r fig.height=12, fig.width=9}
-
-p_prevalence_journals + watermark(30)
-
-p_trend_journals + watermark(30)
-
-```
-
-#### Prevalences + trends
-
-```{r fig.height=8, fig.width=9}
-
-p_years_field + watermark()
-
-```
-
-```{r fig.height=8, fig.width=9}
-
-p_years_subfields + watermark()
-
-```
-
 ## Combined table with summary conclusions
 
 categorical conclusions for field, subfield, and journal levels based on prevalence category and trend (detectably increasing/decreasing, no detectable change)
@@ -1427,6 +1359,76 @@ posterior_prevalence_and_trends |>
   kable_classic(full_width = FALSE)
 
 ```
+
+# Watermark simulated data plots 
+
+```{r fig.height=6, fig.width=5}
+
+library(grid)
+
+watermark <- function(fontsize = 20){
+  annotation_custom(
+    grob = textGrob(label = "Simulated data",
+                    gp = gpar(fontsize = fontsize, 
+                              col = "red", 
+                              alpha = 0.5), 
+                    rot = 30),
+    xmin = -Inf, xmax = Inf,
+    ymin = -Inf, ymax = Inf
+  )
+}
+
+```
+
+## Correlations
+
+```{r fig.height=6, fig.width=6}
+
+p_cors_field_intercept + watermark(30)
+
+p_cors_field_slope + watermark(30)
+
+# p_cors_journal_intercept + watermark(30)
+# 
+# p_cors_journal_slope + watermark(30)
+
+```
+
+## Prevalences
+
+```{r fig.height=4.5, fig.width=9}
+
+p_prevalence_subfields + watermark(30)
+
+p_trend_subfields + watermark(30)
+
+```
+
+## Trends
+
+```{r fig.height=12, fig.width=9}
+
+p_prevalence_journals + watermark(30)
+
+p_trend_journals + watermark(30)
+
+```
+
+## Prevalences + trends
+
+```{r fig.height=8, fig.width=9}
+
+p_years_field + watermark()
+
+```
+
+```{r fig.height=8, fig.width=9}
+
+p_years_subfields + watermark()
+
+```
+
+
 
 # Session info
 
