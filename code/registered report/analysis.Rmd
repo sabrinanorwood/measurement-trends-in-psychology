@@ -14,14 +14,10 @@ output:
 
 # TODO
 
+- fix "\n" bug in prevalence-and-trend plots
 - add detectability to trends plots and table
 - Add an (alternative) weighted model that weights by total articles published in each journal during that year? This should only produce results for the field as a whole, eg "Psychology (weighted by publications per journal per year)"
 - remove/refactor plotting of summary data in plots, as the real data will be planned-missing
-- think about model diagnostics more
-- Extracted trends are currently identical across levels of the random effect, which can't be right. Fix existing code or write a manual version that estimates trend from multiple estimated means? drop back to tidybayes if emmeans isn't working, or try {marginaleffects}
-- table of correlations among random effects could star the estimates with intervals that exclude 0. some commented out code attempting this.
-- correlations among the random effects, not the residual variance terms, which we don't have here. dont misdescribe these as residuals
-- don't misdescribe percentile based CIs with HDIs. below uses percentile CIs
 
 ```{r setup, include=FALSE}
 
@@ -35,6 +31,7 @@ knitr::opts_chunk$set(message = FALSE,
 library(dplyr)
 library(tidyr)
 library(tibble)
+library(stringr)
 library(forcats)
 library(purrr)
 library(readr)
@@ -342,19 +339,6 @@ ggplot(prior_sd, aes(sd, density)) +
 data_centered <- data_simulated |>
   mutate(year_centered = year - 2016)
 
-# needed later
-outcome_measures <- c("directbehavioral",
-                      "behavioralproxy",
-                      "selfreportsaboutbehavior",
-                      "mixed",
-                      "selfreport",
-                      "neurophys",
-                      "cognitiveability")
-
-year_centered_values <- data_centered |>
-  distinct(year_centered) |>
-  pull(year_centered)
-
 # specify Wilkinson notation for the model
 formulas <- 
   bf(formula = directbehavioral ~         1 + year_centered + (1 + year_centered | p | subfield) + (1 + year_centered | q | subfield:journal)) +
@@ -413,161 +397,23 @@ fitted_model <- brm(
 
 ```
 
+## Model diagnostics
 
 ```{r eval=FALSE, include=FALSE}
 
-fitted_model
-#pp_check(fitted_model, ndraws = 100, resp = "usesdirectbehavioral")
+summary(fitted_model)
 
-plot(fitted_model, comparisons = TRUE)
+pp_check(fitted_model, ndraws = 100, resp = "directbehavioral")
+pp_check(fitted_model, ndraws = 100, resp = "behavioralproxy")
+pp_check(fitted_model, ndraws = 100, resp = "selfreportsaboutbehavior")
+pp_check(fitted_model, ndraws = 100, resp = "mixed")
+pp_check(fitted_model, ndraws = 100, resp = "selfreport")
+pp_check(fitted_model, ndraws = 100, resp = "neurophys")
+pp_check(fitted_model, ndraws = 100, resp = "cognitiveability")
 
-```
-
-## Correlations among the random effects
-
-### Subfields
-
-#### Prevalence
-
-```{r}
-# solomon suggestions
-temp <- as_draws_df(fitted_model) |>
-  select(starts_with("cor_"))
-#summarize_all(~ median)
+plot(fitted_model, comparisons = TRUE, ask = FALSE)
 
 ```
-
-```{r}
-
-# extract correlations/covariances among the random effects
-var_cors <- VarCorr(fitted_model)
-
-# wrangle the correlations at the subfield level of the random effect
-var_cors_field <- var_cors$subfield$cor |>
-  as.data.frame() |>
-  rownames_to_column(var = "var")
-
-# extract those for the prevalences' point estimates
-var_cors_field_intercept <- var_cors_field |>
-  filter(str_detect(var, "Intercept")) |>
-  select(var, contains("Intercept") & contains("Estimate.")) |>
-  mutate_if(is.numeric, round_half_up, digits = 2) |>
-  mutate(var = str_remove(var, "_Intercept")) %>%
-  rename_with(~ str_remove(., "Estimate.")) %>%
-  rename_with(~ str_remove(., "_Intercept"))
-
-# var_cors_field_intercept_upper <- var_cors_field |>
-#   filter(str_detect(var, "Intercept")) |>
-#   select(var, contains("Intercept") & contains("Q97.5.")) |>
-#   mutate(var = str_remove(var, "_Intercept")) %>%
-#   rename_with(~ str_remove(., "Q97.5.")) %>%
-#   rename_with(~ str_remove(., "_Intercept")) %>%
-#   mutate(across(where(is.numeric), ~ if_else(. < 0, 1, 0)))
-# 
-# var_cors_field_intercept_lower <- var_cors_field |>
-#   filter(str_detect(var, "Intercept")) |>
-#   select(var, contains("Intercept") & contains("Q2.5.")) |>
-#   mutate(var = str_remove(var, "_Intercept")) %>%
-#   rename_with(~ str_remove(., "Q2.5.")) %>%
-#   rename_with(~ str_remove(., "_Intercept")) %>%
-#   mutate(across(where(is.numeric), ~ if_else(. > 0, 1, 0)))
-# 
-# result <- var_cors_field_intercept_upper %>%
-#   mutate(across(
-#     .cols = where(is.numeric),
-#     .fns = ~ if_else(. == 1 | var_cors_field_intercept_lower[[cur_column()]] == 1, "*", "")
-#   ))
-
-# print table
-var_cors_field_intercept |>
-  kable(caption = "Correlations among random effects for prevalence at the subfield level") |>
-  kable_classic(full_width = FALSE)
-
-
-# show_col(viridis::mako(25))
-# viridis::mako(25)
-
-p_cors_field_intercept <- var_cors_field_intercept |> 
-  column_to_rownames("var") |>
-  ggcorrplot(hc.order = TRUE, 
-             method = "circle",
-             colors = c("#413E7EFF", "#DEF5E5FF", "#359EAAFF"), 
-             type = "full",
-             outline.col = "grey20",
-             ggtheme = ggplot2::theme_linedraw) 
-
-p_cors_field_intercept
-
-quicksave("p_cors_field_intercept", 6, 6)
-
-```
-
-#### Trend
-
-```{r}
-
-var_cors_field_slope <- var_cors_field |>
-  filter(str_detect(var, "_year_centered")) |>
-  select(var, contains("_year_centered") & contains("Estimate.")) |>
-  mutate_if(is.numeric, round_half_up, digits = 2) |>
-  mutate(var = str_remove(var, "_year_centered")) %>%
-  rename_with(~ str_remove(., "Estimate.")) %>%
-  rename_with(~ str_remove(., "_year_centered"))
-
-var_cors_field_slope |>
-  kable(caption = "Correlations among random effects for trend at the subfield level") |>
-  kable_classic(full_width = FALSE)
-
-corr_field_slope <- 
-  
-  # show_col(viridis::mako(25))
-  # viridis::mako(25)
-  
-  p_cors_field_slope <- var_cors_field_slope |> 
-  column_to_rownames("var") |>
-  ggcorrplot(hc.order = TRUE, 
-             method = "circle",
-             colors = c("#413E7EFF", "#DEF5E5FF", "#359EAAFF"), 
-             type = "full",
-             outline.col = "grey20",
-             ggtheme = ggplot2::theme_linedraw)
-
-p_cors_field_slope
-
-quicksave("p_cors_field_slope", 6, 6)
-
-```
-
-### Journals
-
-#### Prevalence \TODO
-
-still have to decide whether to extract recors at the journal or subfield level. former might have more variance and nuance, latter has less risk of overfitting. fit both and WAIC?
-
-```{r}
-
-var_cors_journal <- var_cors$`subfield:journal`$cor |>
-  as.data.frame() |>
-  rownames_to_column(var = "var")
-
-var_cors_journal_intercept <- var_cors_journal |>
-  filter(str_detect(var, "Intercept")) |>
-  select(var, contains("Intercept") & contains("Estimate.")) |>
-  mutate_if(is.numeric, round_half_up, digits = 2) |>
-  mutate(var = str_remove(var, "_Intercept")) %>%
-  rename_with(~ str_remove(., "Estimate.")) %>%
-  rename_with(~ str_remove(., "_Intercept"))
-
-var_cors_journal_intercept |>
-  kable(caption = "Correlations among random effects for prevalence at the journal level") |>
-  kable_classic(full_width = FALSE)
-
-```
-
-#### Trend \TODO
-
-(possibly needed)
-
 
 ## Extract estimates
 
@@ -1116,9 +962,7 @@ quicksave("p_trend_journals", 9, 18)
 
 ```
 
-## \TODO Plot prevalences and trends
-
-\TODO change to marginaleffects
+## Plot prevalences and trends
 
 ### Field
 
@@ -1153,38 +997,29 @@ data_summary_field <- data_centered |>
                                "Neurophysiological",
                                "Cognitive Ability"))
 
-if(exists("models/posterior_prevalence_field_year.rds")){
-  posterior_prevalence_field_year <- read_rds("models/posterior_prevalence_field_year.rds")
-} else {
-  # adjust the previously used function to fit for specific values of year_centered
-  est_prevalence_grandmean_year <- function(outcome, year_centered, fit){
-    fit |>
-      emmeans(specs = ~ 1,
-              at = list(year_centered = year_centered),
-              epred = TRUE,
-              re_formula = NA,
-              allow_new_levels = FALSE,
-              resp = outcome) |>
-      summary() |>
-      select(prevalence_estimate = emmean,
-             prevalence_ci_lower = lower.HPD,
-             prevalence_ci_upper = upper.HPD)
-  }
+if(exists("models/posterior_prevalence_field_marginal_by_year.rds") &
+   exists("models/posterior_prevalence_field_conditional_by_year.rds")){
   
-  posterior_prevalence_field_year <- 
-    expand_grid(outcome = outcome_measures,
-                year_centered = year_centered_values) |>
-    mutate(res = pmap(list(outcome,
-                           year_centered),
-                      est_prevalence_grandmean_year,
+  posterior_prevalence_field_marginal_by_year <- 
+    read_rds("models/posterior_prevalence_field_marginal_by_year.rds")
+  
+  posterior_prevalence_field_conditional_by_year <- 
+    read_rds("models/posterior_prevalence_field_conditional_by_year.rds")
+  
+} else {
+  
+  # field - marginal effect
+  posterior_prevalence_field_marginal_by_year <- 
+    expand_grid(data_centered |>
+                  distinct(year, year_centered),
+                subfield = "across field", 
+                journal = "across field",
+                type = "marginal",
+                re_level = "field") |>
+    tibble(res = pmap(list(subfield, journal, type, year_centered), 
+                      est_prevalence, 
                       fit = fitted_model)) |>
     unnest(res) |>
-    mutate(re_level = "field",
-           subfield = "hypothetical typical subfield", 
-           journal = "hypothetical typical journal") |>
-    left_join(data_centered |>
-                distinct(year, year_centered),
-              by = "year_centered") |>
     mutate(outcome = case_when(outcome == "directbehavioral" ~ "Direct Behavioral Measure",		
                                outcome == "behavioralproxy" ~ "Behavioral Proxy",
                                outcome == "selfreportsaboutbehavior" ~ "Self-Report about Behavior",
@@ -1201,13 +1036,45 @@ if(exists("models/posterior_prevalence_field_year.rds")){
                                  "Neurophysiological",
                                  "Cognitive Ability"))
   
-  write_rds(posterior_prevalence_field_year, "models/posterior_prevalence_field_year.rds")
+  # field - conditional effect
+  posterior_prevalence_field_conditional_by_year <- 
+    expand_grid(data_centered |>
+                  distinct(year, year_centered),
+                subfield = "hypothetical typical subfield", 
+                journal = "hypothetical typical journal",
+                type = "conditional",
+                re_level = "field") |>
+    tibble(res = pmap(list(subfield, journal, type, year_centered), 
+                      est_prevalence, 
+                      fit = fitted_model)) |>
+    unnest(res) |>
+    mutate(outcome = case_when(outcome == "directbehavioral" ~ "Direct Behavioral Measure",		
+                               outcome == "behavioralproxy" ~ "Behavioral Proxy",
+                               outcome == "selfreportsaboutbehavior" ~ "Self-Report about Behavior",
+                               outcome == "mixed" ~ "Mixed Self-Report",
+                               outcome == "selfreport" ~ "Self-Report about Subjective Experience",
+                               outcome == "neurophys" ~ "Neurophysiological",
+                               outcome == "cognitiveability" ~ "Cognitive Ability"),
+           outcome = fct_relevel(outcome, 
+                                 "Direct Behavioral Measure",		
+                                 "Behavioral Proxy",
+                                 "Self-Report about Behavior",
+                                 "Mixed Self-Report",
+                                 "Self-Report about Subjective Experience",
+                                 "Neurophysiological",
+                                 "Cognitive Ability"))
+  
+  #write_rds(posterior_prevalence_field_year, "models/posterior_prevalence_field_year.rds")
+  write_rds(posterior_prevalence_field_marginal_by_year,
+            "models/posterior_prevalence_field_marginal_by_year.rds")
+  write_rds(posterior_prevalence_field_conditional_by_year, 
+            "models/posterior_prevalence_field_conditional_by_year.rds")
 }
 
 # plot
-p_prevalence_and_trend_field <- ggplot() +
-  geom_ribbon(data = posterior_prevalence_field_year, aes(year, ymin = prevalence_ci_lower, ymax = prevalence_ci_upper), fill = "skyblue", alpha = 0.5) +
-  geom_smooth(data = posterior_prevalence_field_year, aes(year, prevalence_estimate),
+p_prevalence_and_trend_field_marginal <- ggplot() +
+  geom_ribbon(data = posterior_prevalence_field_marginal_by_year, aes(year, ymin = prevalence_ci_lower, ymax = prevalence_ci_upper), fill = "skyblue", alpha = 0.5) +
+  geom_smooth(data = posterior_prevalence_field_marginal_by_year, aes(year, prevalence_estimate),
               method = "lm", color = "black", size = 0.75, se = FALSE) +
   geom_point(data = data_summary_field, aes(year, proportion), size = 1) +
   theme_linedraw() +
@@ -1218,9 +1085,27 @@ p_prevalence_and_trend_field <- ggplot() +
   xlab("Year") +
   facet_wrap( ~ outcome, ncol = 2)
 
-p_prevalence_and_trend_field
+p_prevalence_and_trend_field_marginal
 
-quicksave("p_prevalence_and_trend_field", 9, 8)
+quicksave("p_prevalence_and_trend_field_marginal", 9, 8)
+
+
+p_prevalence_and_trend_field_conditional <- ggplot() +
+  geom_ribbon(data = posterior_prevalence_field_conditional_by_year, aes(year, ymin = prevalence_ci_lower, ymax = prevalence_ci_upper), fill = "skyblue", alpha = 0.5) +
+  geom_smooth(data = posterior_prevalence_field_conditional_by_year, aes(year, prevalence_estimate),
+              method = "lm", color = "black", size = 0.75, se = FALSE) +
+  geom_point(data = data_summary_field, aes(year, proportion), size = 1) +
+  theme_linedraw() +
+  scale_x_continuous(breaks = c(2010, 2012, 2014, 2016, 2018, 2020, 2022)) +
+  coord_cartesian(ylim = c(0,1)) +
+  scale_y_continuous(labels = scales::label_percent()) + # , breaks = c(0, 0.05, 0.1, 0.25, 0.5, 1)
+  ylab("Prevalence") +
+  xlab("Year") +
+  facet_wrap( ~ outcome, ncol = 2)
+
+p_prevalence_and_trend_field_conditional
+
+quicksave("p_prevalence_and_trend_field_conditional", 9, 8)
 
 ```
 
@@ -1259,45 +1144,23 @@ data_summary_subfields <- data_centered |>
                                "Neurophysiological",
                                "Cognitive Ability"))
 
-if(exists("models/posterior_prevalence_subfield_year.rds")){
-  posterior_prevalence_subfield_year <- read_rds("models/posterior_prevalence_subfield_year.rds")
-} else {
-  # adjust the previously used function to fit for specific values of year_centered
-  est_prevalence_subfield_year <- function(outcome, subfield, journal, year_centered, fit){
-    fit |>
-      emmeans(specs = ~ 1,
-              at = list(year_centered = year_centered,
-                        subfield = subfield,
-                        journal = journal),
-              epred = TRUE,
-              re_formula = NULL,
-              allow_new_levels = TRUE,
-              sample_new_levels = "uncertainty",
-              rg.limit = 40000,
-              resp = outcome) |>
-      summary() |>
-      select(prevalence_estimate = emmean,
-             prevalence_ci_lower = lower.HPD,
-             prevalence_ci_upper = upper.HPD)
-  }
+if(exists("models/posterior_prevalence_subfields_conditional_by_year.rds")){
   
-  posterior_prevalence_subfield_year <- 
-    expand_grid(outcome = outcome_measures,
-                data_centered |>
-                  distinct(subfield),
+  posterior_prevalence_subfields_conditional_by_year <-
+    read_rds("models/posterior_prevalence_subfields_conditional_by_year.rds")
+  
+} else {
+  
+  posterior_prevalence_subfields_conditional_by_year <- 
+    expand_grid(data_centered |>
+                  distinct(year, year_centered, subfield),
                 journal = "hypothetical typical journal",
-                year_centered = year_centered_values) |>
-    mutate(res = pmap(list(outcome,
-                           subfield,
-                           journal,
-                           year_centered),
-                      est_prevalence_subfield_year,
+                type = "conditional",
+                re_level = "subfields") |>
+    tibble(res = pmap(list(subfield, journal, type, year_centered), 
+                      est_prevalence, 
                       fit = fitted_model)) |>
-    unnest(res) |>
-    mutate(re_level = "subfields") |>
-    left_join(data_centered |>
-                distinct(year, year_centered),
-              by = "year_centered") |>
+    unnest(res)  |>
     mutate(outcome = case_when(outcome == "directbehavioral" ~ "Direct Behavioral Measure",		
                                outcome == "behavioralproxy" ~ "Behavioral Proxy",
                                outcome == "selfreportsaboutbehavior" ~ "Self-Report about Behavior",
@@ -1314,13 +1177,14 @@ if(exists("models/posterior_prevalence_subfield_year.rds")){
                                  "Neurophysiological",
                                  "Cognitive Ability"))
   
-  write_rds(posterior_prevalence_subfield_year, "models/posterior_prevalence_subfield_year.rds")
+  write_rds(posterior_prevalence_subfields_conditional_by_year, 
+            "models/posterior_prevalence_subfields_conditional_by_year.rds")
 }
 
 # plot
 p_prevalence_and_trend_subfields <- ggplot() +
-  geom_ribbon(data = posterior_prevalence_subfield_year, aes(year, ymin = prevalence_ci_lower, ymax = prevalence_ci_upper), fill = "skyblue", alpha = 0.5) +
-  geom_smooth(data = posterior_prevalence_subfield_year, aes(year, prevalence_estimate),
+  geom_ribbon(data = posterior_prevalence_subfields_conditional_by_year, aes(year, ymin = prevalence_ci_lower, ymax = prevalence_ci_upper), fill = "skyblue", alpha = 0.5) +
+  geom_smooth(data = posterior_prevalence_subfields_conditional_by_year, aes(year, prevalence_estimate),
               method = "lm", color = "black", size = 0.75, se = FALSE) +
   geom_point(data = data_summary_subfields, aes(year, proportion), size = 1) +
   theme_linedraw() +
@@ -1360,6 +1224,121 @@ posterior_prevalence_and_trends |>
 
 ```
 
+## Correlations among the random effects
+
+At the level of journals.
+
+#### Prevalence
+
+```{r fig.height=7.5, fig.width=7.5}
+
+# extract correlations/covariances among the random effects
+var_cors <- VarCorr(fitted_model)
+
+# wrangle
+var_cors_journal <- var_cors$`subfield:journal`$cor |>
+  as.data.frame() |>
+  rownames_to_column(var = "var")
+
+var_cors_journal_intercept <- var_cors_journal |>
+  filter(str_detect(var, "Intercept")) |>
+  select(var, contains("Intercept") & contains("Estimate.")) |>
+  mutate_if(is.numeric, round_half_up, digits = 2) |>
+  mutate(var = str_remove(var, "_Intercept")) %>%
+  rename_with(~ str_remove(., "Estimate.")) %>%
+  rename_with(~ str_remove(., "_Intercept"))
+
+# table
+var_cors_journal_intercept |>
+  kable(caption = "Correlations among random effects for prevalence at the journal level") |>
+  kable_classic(full_width = FALSE)
+
+# show_col(viridis::mako(25))
+# viridis::mako(25)
+
+# plot
+p_cors_journal_intercept <- var_cors_journal_intercept |>
+  rename(outcome = var,
+         "Direct Behavioral Measure" = directbehavioral, 
+         "Behavioral Proxy" = behavioralproxy, 
+         "Self-Report about Behavior" = selfreportsaboutbehavior, 
+         "Mixed Self-Report" = mixed, 
+         "Self-Report about Subjective Experience" = selfreport, 
+         "Neurophysiological" = neurophys, 
+         "Cognitive Ability" = cognitiveability) |>
+  mutate(outcome = case_when(outcome == "directbehavioral" ~ "Direct Behavioral Measure",		
+                             outcome == "behavioralproxy" ~ "Behavioral Proxy",
+                             outcome == "selfreportsaboutbehavior" ~ "Self-Report about Behavior",
+                             outcome == "mixed" ~ "Mixed Self-Report",
+                             outcome == "selfreport" ~ "Self-Report about Subjective Experience",
+                             outcome == "neurophys" ~ "Neurophysiological",
+                             outcome == "cognitiveability" ~ "Cognitive Ability")) |>
+  column_to_rownames("outcome") |>
+  ggcorrplot(hc.order = TRUE,
+             method = "circle",
+             colors = c("#413E7EFF", "#DEF5E5FF", "#359EAAFF"),
+             type = "full",
+             outline.col = "grey20",
+             ggtheme = ggplot2::theme_linedraw)
+
+p_cors_journal_intercept
+
+quicksave("p_cors_journal_intercept", 7.5, 7.5)
+
+```
+
+#### Trend
+
+```{r fig.height=7.5, fig.width=7.5}
+
+# wrangle
+var_cors_journal_slope <- var_cors_journal |>
+  filter(str_detect(var, "_year_centered")) |>
+  select(var, contains("_year_centered") & contains("Estimate.")) |>
+  mutate_if(is.numeric, round_half_up, digits = 2) |>
+  mutate(var = str_remove(var, "_year_centered")) %>%
+  rename_with(~ str_remove(., "Estimate.")) %>%
+  rename_with(~ str_remove(., "_year_centered"))
+
+# table
+var_cors_journal_slope |>
+  kable(caption = "Correlations among random effects for trend at the subfield level") |>
+  kable_classic(full_width = FALSE)
+
+# show_col(viridis::mako(25))
+# viridis::mako(25)
+
+# plot
+p_cors_journal_slope <- var_cors_journal_slope |> 
+  rename(outcome = var,
+         "Direct Behavioral Measure" = directbehavioral, 
+         "Behavioral Proxy" = behavioralproxy, 
+         "Self-Report about Behavior" = selfreportsaboutbehavior, 
+         "Mixed Self-Report" = mixed, 
+         "Self-Report about Subjective Experience" = selfreport, 
+         "Neurophysiological" = neurophys, 
+         "Cognitive Ability" = cognitiveability) |>
+  mutate(outcome = case_when(outcome == "directbehavioral" ~ "Direct Behavioral Measure",		
+                             outcome == "behavioralproxy" ~ "Behavioral Proxy",
+                             outcome == "selfreportsaboutbehavior" ~ "Self-Report about Behavior",
+                             outcome == "mixed" ~ "Mixed Self-Report",
+                             outcome == "selfreport" ~ "Self-Report about Subjective Experience",
+                             outcome == "neurophys" ~ "Neurophysiological",
+                             outcome == "cognitiveability" ~ "Cognitive Ability")) |>
+  column_to_rownames("outcome") |>
+  ggcorrplot(hc.order = TRUE, 
+             method = "circle",
+             colors = c("#413E7EFF", "#DEF5E5FF", "#359EAAFF"), 
+             type = "full",
+             outline.col = "grey20",
+             ggtheme = ggplot2::theme_linedraw)
+
+p_cors_journal_slope
+
+quicksave("p_cors_journal_slope", 7.5, 7.5)
+
+```
+
 # Watermark simulated data plots 
 
 ```{r fig.height=6, fig.width=5}
@@ -1380,27 +1359,26 @@ watermark <- function(fontsize = 20){
 
 ```
 
-## Correlations
-
-```{r fig.height=6, fig.width=6}
-
-p_cors_field_intercept + watermark(30)
-
-p_cors_field_slope + watermark(30)
-
-# p_cors_journal_intercept + watermark(30)
-# 
-# p_cors_journal_slope + watermark(30)
-
-```
-
 ## Prevalences
 
 ```{r fig.height=4.5, fig.width=9}
 
-p_prevalence_subfields + watermark(30)
+p_prevalence_subfields + watermark(10)
 
-p_trend_subfields + watermark(30)
+quicksave("p_prevalence_subfields_watermark", 9, 4.5)
+
+
+p_trend_subfields + watermark(10)
+
+quicksave("p_trend_subfields_watermark", 9, 4.5)
+
+```
+
+```{r fig.height=18, fig.width=9}
+
+p_prevalence_journals + watermark(30)
+
+quicksave("p_prevalence_journals", 9, 18)
 
 ```
 
@@ -1410,7 +1388,20 @@ p_trend_subfields + watermark(30)
 
 p_prevalence_journals + watermark(30)
 
+quicksave("p_prevalence_journals_watermark", 9, 12)
+
+
 p_trend_journals + watermark(30)
+
+quicksave("p_trend_journals_watermark", 9, 12)
+
+```
+
+```{r fig.height=18, fig.width=9}
+
+p_trend_journals + watermark(30)
+
+quicksave("p_trend_journals", 9, 18)
 
 ```
 
@@ -1418,17 +1409,31 @@ p_trend_journals + watermark(30)
 
 ```{r fig.height=8, fig.width=9}
 
-p_years_field + watermark()
+p_prevalence_and_trend_field_marginal + watermark()
+
+quicksave("p_prevalence_and_trend_field_marginal_watermark", 9, 8)
+
+
+p_prevalence_and_trend_field_conditional + watermark()
+
+quicksave("p_prevalence_and_trend_field_conditional_watermark", 9, 8)
 
 ```
 
-```{r fig.height=8, fig.width=9}
+## Correlations
 
-p_years_subfields + watermark()
+```{r fig.height=7.5, fig.width=7.5}
+
+p_cors_journal_intercept + watermark(30)
+
+quicksave("p_cors_journal_intercept_watermark", 7.5, 7.5)
+
+
+p_cors_journal_slope + watermark(30)
+
+quicksave("p_cors_journal_slope_watermark", 7.5, 7.5)
 
 ```
-
-
 
 # Session info
 
