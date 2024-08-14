@@ -14,7 +14,6 @@ output:
 
 # TODO
 
-- add detectability to trends plots and table
 - Add an (alternative) weighted model that weights by total articles published in each journal during that year? This should only produce results for the field as a whole, eg "Psychology (weighted by publications per journal per year)"
 - remove/refactor plotting of summary data in plots, as the real data will be planned-missing
 - think about model diagnostics more
@@ -37,7 +36,6 @@ library(tidyr)
 library(tibble)
 library(forcats)
 library(purrr)
-library(readr)
 library(janitor)
 library(ggplot2)
 library(scales)
@@ -571,6 +569,59 @@ var_cors_journal_intercept |>
 
 ## Extract estimates
 
+Resource used: https://www.andrewheiss.com/blog/2021/11/10/ame-bayes-re-guide/
+
+### Prevalence marginaleffects
+
+```{r}
+
+est_prevalence <- function(outcome, subfield = "hypothetical typical subfield", journal = "hypothetical typical journal", type = c("conditional", "marginal"), year_centered = 0) {
+  
+  # reminder of the distinction: 
+  # "a typical journal..." (conditional effect, taking levels of the random effects into account, whether existing or new hypothetical ones) vs.
+  # "typically, journals..." (marginal effect, ignoring the random effects, therefore likely producing wider estimates given any heterogeneity among the random effects)
+   
+  if(type == "conditional") {
+    # conditional effect for either existing levels of the random effects if specified,
+    # or if not specified then for hypothetical new representative levels 
+    if(subfield == "hypothetical typical subfield"){
+      subfield = factor("hypothetical typical subfield", levels = unique(fit$data$subfield))
+    }
+    
+    if(journal == "hypothetical typical journal"){
+      journal = factor("hypothetical typical journal", levels = unique(fit$data$journal))
+    }
+    
+    res <- 
+      predictions(model = fitted_model,
+                  newdata = datagrid(year_centered = year_centered,
+                                     subfield = subfield,
+                                     journal = journal),
+                  re_formula = NULL,
+                  allow_new_levels = TRUE,
+                  outcome = outcome) |>
+      filter(group == outcome) |>
+      select(prevalence_estimate = estimate,
+             prevalence_ci_lower = conf.low,
+             prevalence_ci_upper = conf.high)
+    
+  } else if (type == "marginal") {
+    res <- 
+      predictions(model = fit,
+                  newdata = datagrid(year_centered = year_centered),
+                  re_formula = NA,  
+                  allow_new_levels = FALSE) |>
+      filter(group == outcome) |>
+      select(prevalence_estimate = estimate,
+             prevalence_ci_lower = conf.low,
+             prevalence_ci_upper = conf.high)
+  }
+  
+  return(res)
+}
+
+```
+
 ### Prevalence
 
 ```{r}
@@ -579,113 +630,100 @@ if(exists("models/posterior_prevalence.rds")){
   posterior_prevalence <- read_rds("models/posterior_prevalence.rds")
 } else {
   
-  est_prevalence <- function(subfield = "hypothetical typical subfield", journal = "hypothetical typical journal", type = c("conditional", "marginal"), year_centered = 0, fit) {
-    
-    # reminder of the distinction: 
-    # "a typical journal..." (conditional effect, taking levels of the random effects into account, whether existing or new hypothetical ones) vs.
-    # "typically, journals..." (marginal effect, ignoring the random effects, therefore likely producing wider estimates given any heterogeneity among the random effects)
-    
-    if(type == "conditional") {
-      # conditional effect for either existing levels of the random effects if specified,
-      # or if not specified then for hypothetical new representative levels 
-      if(subfield == "hypothetical typical subfield"){
-        subfield_dummy = factor("hypothetical typical subfield", levels = unique(fit$data$subfield))
-      } else {
-        subfield_dummy <- subfield
-      }
-      
-      if(journal == "hypothetical typical journal"){
-        journal_dummy = factor("hypothetical typical journal", levels = unique(fit$data$journal))
-      } else {
-        journal_dummy <- journal
-      }
-      
-      res <- 
-        predictions(model = fitted_model,
-                    newdata = datagrid(year_centered = year_centered,
-                                       subfield = subfield_dummy,
-                                       journal = journal_dummy),
-                    re_formula = NULL,
-                    allow_new_levels = TRUE) |>
-        select(outcome = group, 
-               prevalence_estimate = estimate,
-               prevalence_ci_lower = conf.low,
-               prevalence_ci_upper = conf.high)
-      
-    } else if (type == "marginal") {
-      res <- 
-        predictions(model = fit,
-                    newdata = datagrid(year_centered = year_centered),
-                    re_formula = NA,  
-                    allow_new_levels = FALSE) |>
-        select(outcome = group, 
-               prevalence_estimate = estimate,
-               prevalence_ci_lower = conf.low,
-               prevalence_ci_upper = conf.high)
-    }
-    
-    return(res)
+  # field
+  est_prevalence_grandmean <- function(outcome, fit){
+    fit |>
+      emmeans(specs = ~ 1,
+              at = list(year_centered = 0),
+              epred = TRUE,
+              re_formula = NA,
+              allow_new_levels = FALSE,
+              resp = outcome) |>
+      summary() |>
+      mutate(outcome = outcome) |>
+      select(prevalence_estimate = emmean,
+             prevalence_ci_lower = lower.HPD,
+             prevalence_ci_upper = upper.HPD)
   }
   
-  # field - marginal effect
-  posterior_prevalence_field_marginal <- 
-    expand_grid(subfield = "across field", 
-                journal = "across field",
-                type = "marginal",
-                re_level = "field") |>
-    tibble(res = pmap(list(subfield, journal, type), 
-                      est_prevalence, 
+  posterior_prevalence_field <- 
+    expand_grid(outcome = outcome_measures) |>
+    tibble(res = pmap(list(outcome), 
+                      est_prevalence_grandmean, 
                       fit = fitted_model)) |>
-    unnest(res) 
+    unnest(res) |>
+    mutate(re_level = "field",
+           subfield = "hypothetical typical subfield", 
+           journal = "hypothetical typical journal")
   
-  # field - conditional effect
-  posterior_prevalence_field_conditional <- 
-    expand_grid(subfield = "hypothetical typical subfield", 
-                journal = "hypothetical typical journal",
-                type = "conditional",
-                re_level = "field") |>
-    tibble(res = pmap(list(subfield, journal, type), 
-                      est_prevalence, 
-                      fit = fitted_model)) |>
-    unnest(res) 
+  
+  
+  # estimate prevalence for either an existing subfield and journal, or an existing subfield and hypothetical journal, or hypothetical subfield and journal
+  est_prevalence <- function(outcome, subfield, journal, fit){
+    fit |>
+      emmeans(specs = ~ 1,
+              at = list(year_centered = 0,
+                        subfield = subfield,
+                        journal = journal),
+              resp = outcome,
+              epred = TRUE,
+              re_formula = NULL,
+              allow_new_levels = TRUE,
+              sample_new_levels = "uncertainty",
+              rg.limit = 40000)  |>
+      summary() |>
+      select(prevalence_estimate = emmean,
+             prevalence_ci_lower = lower.HPD,
+             prevalence_ci_upper = upper.HPD)
+  }
+  
+  helper_function_prevalence <- function(outcome, subfield, journal, fit){
+    tibble(outcome = outcome,
+           subfield = subfield,
+           journal = journal) |>
+      mutate(res = pmap(list(outcome,
+                             subfield,
+                             journal,
+                             list(fit)),
+                        est_prevalence)) |>
+      unnest(cols = c(res)) |>
+      select(-outcome, -subfield, -journal)
+  }
   
   # subfields
   posterior_prevalence_subfields <- 
-    expand_grid(data_centered |>
+    expand_grid(outcome = outcome_measures,
+                data_centered |>
                   distinct(subfield),
-                journal = "hypothetical typical journal",
-                type = "conditional",
-                re_level = "subfields") |>
-    tibble(res = pmap(list(subfield, journal, type), 
-                      est_prevalence, 
+                journal = "hypothetical typical journal") |>
+    mutate(res = pmap(list(outcome, subfield, journal), 
+                      helper_function_prevalence, 
                       fit = fitted_model)) |>
-    unnest(res) 
+    unnest() |>
+    mutate(re_level = "subfields")
   
   # journals
   posterior_prevalence_journals <- 
-    expand_grid(data_centered |>
-                  distinct(subfield, journal),
-                type = "conditional",
-                re_level = "journals") |>
-    tibble(res = pmap(list(subfield, journal, type), 
-                      est_prevalence, 
+    expand_grid(outcome = outcome_measures,
+                data_centered |>
+                  distinct(subfield, journal)) |>
+    mutate(res = pmap(list(outcome, subfield, journal), 
+                      helper_function_prevalence, 
                       fit = fitted_model)) |>
-    unnest(res) 
+    unnest() |>
+    mutate(re_level = "journals")
   
   # combine
   posterior_prevalence <- 
-    bind_rows(posterior_prevalence_field_marginal,
-              posterior_prevalence_field_conditional,
+    bind_rows(posterior_prevalence_field,
               posterior_prevalence_subfields,
               posterior_prevalence_journals) |>
-    mutate(label = case_when(re_level == "field" & type == "marginal" ~ "Psychology (marginal)",
-                             re_level == "field" & type == "conditional" ~ "Psychology (conditional)",
+    mutate(label = case_when(re_level == "field" ~ "Psychology",
                              re_level == "subfields" & journal == "hypothetical typical journal" ~ subfield,
                              journal != "hypothetical typical journal" & !is.na(journal) ~ journal)) |>
     mutate(label = fct_relevel(
       label,
-      "Psychology (marginal)",
-      "Psychology (conditional)",
+      "Psychology", 
       
       "General", 
       "General journal 2", 
@@ -761,9 +799,9 @@ if(exists("models/posterior_prevalence.rds")){
                                            prevalence_estimate >= .25 & prevalence_estimate < .50 ~ "Common",
                                            prevalence_estimate >= .50 ~ "Frequent"),
            prevalence_results = paste0(rnd(prevalence_estimate), " 95% CI [", rnd(prevalence_ci_lower), ", ", rnd(prevalence_ci_upper), "]")) |>
-    select(outcome, label, re_level, type, subfield, journal, 
+    select(outcome, label, re_level, subfield, journal, 
            prevalence_estimate, prevalence_ci_lower, prevalence_ci_upper, prevalence_category, prevalence_results) |>
-    arrange(outcome, desc(label), subfield)
+    arrange(outcome, subfield)
   
   write_rds(posterior_prevalence, "models/posterior_prevalence.rds")
 }
@@ -776,7 +814,7 @@ posterior_prevalence |>
 
 ```
 
-#### Plot field + subfields
+#### Field + Subfields
 
 ```{r fig.height=6, fig.width=11}
 
@@ -822,9 +860,21 @@ quicksave("p_prevalence_subfields", 11, 6)
 
 ```
 
-#### Plot journals
+#### Journals
 
 ```{r fig.height=18, fig.width=9}
+
+# p_prevalence_journals <- posterior_prevalence |>
+#   filter(re_level == "journals") |>
+#   ggplot(aes(prevalence_estimate, label, color = outcome)) +
+#   geom_linerangeh(aes(xmin = prevalence_ci_lower, xmax = prevalence_ci_upper), position = position_dodge(width = .8)) +
+#   geom_point(position = position_dodge(width = .8)) +
+#   coord_cartesian(xlim = c(0, 1)) +
+#   theme_linedraw() +
+#   ylab("") +
+#   xlab("Prevalence") +
+#   guides(color = guide_legend(title = "Measure type",
+#                               reverse = TRUE))
 
 p_prevalence_journals <- posterior_prevalence |>
   filter(re_level == "journals") |>
@@ -855,7 +905,11 @@ quicksave("p_prevalence_journals", 9, 18)
 
 ```
 
-### Trend
+### Trend \TODO
+
+\TODO each level has identical estimates, so the random effect is not being taken into account
+
+\TODO add detectable trend from below back here so that color of points change or sth
 
 ```{r}
 
@@ -863,111 +917,103 @@ if(exists("models/posterior_trends.rds")){
   posterior_trends <- read_rds("models/posterior_trends.rds")
 } else {
   
-  est_trend <- function(subfield = "hypothetical typical subfield", journal = "hypothetical typical journal", type = c("conditional", "marginal"), fit) {
-    
-    # reminder of the distinction: 
-    # "a typical journal..." (conditional effect, taking levels of the random effects into account, whether existing or new hypothetical ones) vs.
-    # "typically, journals..." (marginal effect, ignoring the random effects, therefore likely producing wider estimates given any heterogeneity among the random effects)
-    
-    if(type == "conditional") {
-      # conditional effect for either existing levels of the random effects if specified,
-      # or if not specified then for hypothetical new representative levels 
-      if(subfield == "hypothetical typical subfield"){
-        subfield = factor("hypothetical typical subfield", levels = unique(fit$data$subfield))
-      }
-      
-      if(journal == "hypothetical typical journal"){
-        journal = factor("hypothetical typical journal", levels = unique(fit$data$journal))
-      }
-      
-      res <- 
-        slopes(model = fit,
-               variables = "year_centered", 
-               newdata = datagrid(subfield = subfield,
-                                  journal = journal),
-               re_formula = NULL, 
-               allow_new_levels = TRUE) |>
-        select(outcome = group,
-               trend_estimate = estimate,
-               trend_ci_lower = conf.low,
-               trend_ci_upper = conf.high)
-      
-    } else if (type == "marginal") {
-      res <- 
-        avg_slopes(model = fit,
-                   variables = "year_centered",
-                   re_formula = NA, 
-                   allow_new_levels = FALSE) |>
-        select(outcome = group,
-               trend_estimate = estimate,
-               trend_ci_lower = conf.low,
-               trend_ci_upper = conf.high)
-    }
-    
-    return(res)
+  # field
+  est_trend_grandmean <- function(fit, outcome){
+    fit |>
+      emtrends(specs = ~ year_centered,
+               var = "year_centered",
+               at = list(year_centered = 0),
+               epred = TRUE,
+               re_formula = NA,
+               allow_new_levels = FALSE,
+               resp = outcome) |>
+      summary() |>
+      mutate(outcome = outcome) |>
+      select(trend_estimate = year_centered.trend,
+             trend_ci_lower = lower.HPD,
+             trend_ci_upper = upper.HPD)
   }
   
-  # field - marginal effect
-  posterior_trend_field_marginal <- 
-    expand_grid(subfield = "across field", 
-                journal = "across field",
-                type = "marginal",
-                re_level = "field") |>
-    tibble(res = pmap(list(subfield, journal, type), 
-                      est_trend, 
+  posterior_trend_field <- 
+    expand_grid(outcome = outcome_measures) |>
+    tibble(res = pmap(list(outcome), 
+                      est_trend_grandmean, 
                       fit = fitted_model)) |>
-    unnest(res) 
+    unnest(res) |>
+    mutate(re_level = "field",
+           subfield = "hypothetical typical subfield", 
+           journal = "hypothetical typical journal")
   
-  # field - conditional effect
-  posterior_trend_field_conditional <- 
-    expand_grid(subfield = "hypothetical typical subfield", 
-                journal = "hypothetical typical journal",
-                type = "conditional",
-                re_level = "field") |>
-    tibble(res = pmap(list(subfield, journal, type), 
-                      est_trend, 
-                      fit = fitted_model)) |>
-    unnest(res) 
+  
+  # estimate prevalence for either an existing subfield and journal, or an existing subfield and hypothetical journal, or hypothetical subfield and journal
+  est_trend <- function(outcome, subfield, journal, fit){
+    fit |>
+      emtrends(specs = ~ 1,
+               var = "year_centered",
+               at = list(year_centered = 0,
+                         subfield = subfield,
+                         journal = journal),
+               epred = TRUE,
+               re_formula = NA,
+               allow_new_levels = TRUE,
+               sample_new_levels = "uncertainty",
+               resp = outcome) |>
+      summary() |>
+      mutate(outcome = outcome) |>
+      select(trend_estimate = year_centered.trend,
+             trend_ci_lower = lower.HPD,
+             trend_ci_upper = upper.HPD)
+  }
+  
+  helper_function_trend <- function(outcome, subfield, journal, fit){
+    tibble(outcome = outcome,
+           subfield = subfield,
+           journal = journal) |>
+      mutate(res = pmap(list(outcome,
+                             subfield,
+                             journal,
+                             list(fit)),
+                        est_trend)) |>
+      unnest(cols = c(res)) |>
+      select(-outcome, -subfield, -journal)
+  }
   
   # subfields
   posterior_trend_subfields <- 
-    expand_grid(data_centered |>
+    expand_grid(outcome = outcome_measures,
+                data_centered |>
                   distinct(subfield),
-                journal = "hypothetical typical journal",
-                type = "conditional",
-                re_level = "subfields") |>
-    tibble(res = pmap(list(subfield, journal, type), 
-                      est_trend, 
+                journal = "hypothetical typical journal") |>
+    mutate(res = pmap(list(outcome, subfield, journal), 
+                      helper_function_trend, 
                       fit = fitted_model)) |>
-    unnest(res) 
+    unnest() |>
+    mutate(re_level = "subfields")
   
   # journals
   posterior_trend_journals <- 
-    expand_grid(data_centered |>
-                  distinct(subfield, journal),
-                type = "conditional",
-                re_level = "journals") |>
-    tibble(res = pmap(list(subfield, journal, type), 
-                      est_trend, 
+    expand_grid(outcome = outcome_measures,
+                data_centered |>
+                  distinct(subfield, journal)) |>
+    mutate(res = pmap(list(outcome, subfield, journal), 
+                      helper_function_trend, 
                       fit = fitted_model)) |>
-    unnest(res) 
+    unnest() |>
+    mutate(re_level = "journals")
   
   # combine
   posterior_trends <- 
-    bind_rows(posterior_trend_field_marginal,
-              posterior_trend_field_conditional,
+    bind_rows(posterior_trend_field,
               posterior_trend_subfields,
               posterior_trend_journals) |>
     mutate(subfield = ifelse(is.na(subfield), "", subfield),
            journal = ifelse(is.na(journal), "", journal)) |>
-    mutate(label = case_when(re_level == "field" & type == "marginal" ~ "Psychology (marginal)",
-                             re_level == "field" & type == "conditional" ~ "Psychology (conditional)",
+    mutate(label = case_when(re_level == "field" ~ "Psychology",
                              re_level == "subfields" & journal == "hypothetical typical journal" ~ subfield,
                              journal != "hypothetical typical journal" & !is.na(journal) ~ journal)) |>
     mutate(label = fct_relevel(
       label,
-      "Psychology (marginal)",
-      "Psychology (conditional)",
+      "Psychology", 
       
       "General", 
       "General journal 2", 
@@ -1041,9 +1087,9 @@ if(exists("models/posterior_trends.rds")){
                                       trend_ci_upper < 0 ~ "Decreasing",
                                       TRUE ~ "No trend detected"),
            trend_results = paste0(rnd(trend_estimate), " 95% CI [", rnd(trend_ci_lower), ", ", rnd(trend_ci_upper), "]")) |>
-    select(outcome, label, re_level, type, subfield, journal, 
+    select(outcome, label, re_level, subfield, journal, 
            trend_estimate, trend_ci_lower, trend_ci_upper, trend_category, trend_results) |>
-    arrange(outcome, desc(label), subfield)
+    arrange(outcome, subfield)
   
   write_rds(posterior_trends, "models/posterior_trends.rds")
 }
@@ -1056,15 +1102,77 @@ posterior_trends |>
 
 ```
 
-#### Plot field + subfields
+#### marginaleffects alt
+
+```{r}
+
+est_trend <- function(outcome, subfield = "hypothetical typical subfield", journal = "hypothetical typical journal", type = c("conditional", "marginal")) {
+  
+  # reminder of the distinction: 
+  # "a typical journal..." (conditional effect, taking levels of the random effects into account, whether existing or new hypothetical ones) vs.
+  # "typically, journals..." (marginal effect, ignoring the random effects, therefore likely producing wider estimates given any heterogeneity among the random effects)
+   
+  if(type == "conditional") {
+    # conditional effect for either existing levels of the random effects if specified,
+    # or if not specified then for hypothetical new representative levels 
+    if(subfield == "hypothetical typical subfield"){
+      subfield = factor("hypothetical typical subfield", levels = unique(fit$data$subfield))
+    }
+    
+    if(journal == "hypothetical typical journal"){
+      journal = factor("hypothetical typical journal", levels = unique(fit$data$journal))
+    }
+    
+    res <- 
+      slopes(model = fit,
+             variables = "year_centered", 
+             newdata = datagrid(subfield = subfield,
+                                journal = journal),
+             re_formula = NULL, 
+             allow_new_levels = TRUE) |>
+      filter(group == outcome) |>
+      select(trend_estimate = estimate,
+             trend_ci_lower = conf.low,
+             trend_ci_upper = conf.high)
+    
+  } else if (type == "marginal") {
+    res <- 
+      avg_slopes(model = fit,
+                 variables = "year_centered",
+                 re_formula = NA, 
+                 allow_new_levels = FALSE) |>
+      filter(group == outcome) |>
+      select(trend_estimate = estimate,
+             trend_ci_lower = conf.low,
+             trend_ci_upper = conf.high)
+  }
+  
+  return(res)
+}
+
+```
+
+#### Field + Subfields
 
 ```{r fig.height=6, fig.width=11}
+
+# p_trend_subfields <- posterior_trends |>
+#   filter(re_level != "journals") |>
+#   ggplot(aes(trend_estimate, label, color = outcome)) +
+#   geom_linerangeh(aes(xmin = trend_ci_lower, xmax = trend_ci_upper), position = position_dodge(width = .8)) +
+#   geom_point(position = position_dodge(width = .8)) +
+#   coord_cartesian(xlim = c(-.1, .1)) +
+#   theme_linedraw() +
+#   ylab("") +
+#   xlab("Trend (change per year)") +
+#   scale_x_continuous(labels = scales::label_percent(), breaks = breaks_pretty()) +
+#   guides(color = guide_legend(title = "Measure type",
+#                               reverse = TRUE))
 
 p_trend_subfields <- posterior_trends |>
   filter(re_level != "journals") |>
   mutate(label = fct_relevel(label,
-                             "Psychology (marginal)",
-                             "Psychology (conditional)",
+                             "Psychology",
                              "General",
                              "Clinical",
                              "Cognitive",
@@ -1090,9 +1198,32 @@ quicksave("p_trend_subfields", 11, 6)
 
 ```
 
-#### Plot journals
+#### Journals
 
 ```{r fig.height=18, fig.width=9}
+
+# p_trend_journals <- posterior_trends |>
+#   filter(re_level == "journals") |>
+#   mutate(label = fct_relevel(label, sort(levels(label))),
+#          label = fct_rev(label),
+#          outcome = fct_relevel(outcome, 
+#                                "Direct Behavioral Measure",		
+#                                "Behavioral Proxy",
+#                                "Self-Report about Behavior",
+#                                "Mixed Self-Report",
+#                                "Self-Report about Subjective Experience",
+#                                "Neurophysiological",
+#                                "Cognitive Ability")) |>
+#   ggplot(aes(trend_estimate, label, color = outcome)) +
+#   geom_linerangeh(aes(xmin = trend_ci_lower, xmax = trend_ci_upper), position = position_dodge(width = .8)) +
+#   geom_point(position = position_dodge(width = .8)) +
+#   coord_cartesian(xlim = c(-.1, .1)) +
+#   theme_linedraw() +
+#   ylab("") +
+#   xlab("Trend (change per year)") +
+#   scale_x_continuous(labels = scales::label_percent(), breaks = breaks_pretty()) +
+#   guides(color = guide_legend(title = "Measure type",
+#                               reverse = TRUE))
 
 p_trend_journals <- posterior_trends |>
   filter(re_level == "journals") |>
@@ -1116,15 +1247,13 @@ quicksave("p_trend_journals", 9, 18)
 
 ```
 
-## \TODO Plot prevalences and trends
-
-\TODO change to marginaleffects
+## Plot prevalences and trends 
 
 ### Field
 
 ```{r fig.height=8, fig.width=9}
 
-# calculate empirical means
+# calculate empricial means
 data_summary_field <- data_centered |>
   pivot_longer(cols = c("directbehavioral", 
                         "behavioralproxy",
@@ -1415,7 +1544,7 @@ categorical conclusions for field, subfield, and journal levels based on prevale
 posterior_prevalence_and_trends <- 
   full_join(posterior_prevalence, 
             posterior_trends,
-            by = c("outcome", "label", "re_level", "type", "subfield", "journal"))
+            by = c("outcome", "label", "re_level", "subfield", "journal"))
 
 write_csv(posterior_prevalence_and_trends, "../../data/registered report/results/posterior_prevalence_and_trends.csv")
 
