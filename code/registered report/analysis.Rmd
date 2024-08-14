@@ -14,6 +14,7 @@ output:
 
 # TODO
 
+- prevalence-and-trend plot might need to choose between marginal and conditional means. perhaps component plots too.
 - fix "\n" bug in prevalence-and-trend plots
 - add detectability to trends plots and table
 - Add an (alternative) weighted model that weights by total articles published in each journal during that year? This should only produce results for the field as a whole, eg "Psychology (weighted by publications per journal per year)"
@@ -1126,8 +1127,6 @@ data_summary_subfields <- data_centered |>
                values_to = "used") |>
   group_by(subfield, year, outcome) |>
   summarize(proportion = mean(used)) |>
-  # pivot_wider(names_from = outcome,
-  #             values_from = proportion) |>
   mutate(outcome = case_when(outcome == "directbehavioral" ~ "Direct Behavioral Measure",		
                              outcome == "behavioralproxy" ~ "Behavioral Proxy",
                              outcome == "selfreportsaboutbehavior" ~ "Self-Report about Behavior",
