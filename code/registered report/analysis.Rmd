@@ -1274,14 +1274,15 @@ p_cors_journal_intercept <- var_cors_journal_intercept |>
                              outcome == "neurophys" ~ "Neurophysiological",
                              outcome == "cognitiveability" ~ "Cognitive Ability")) |>
   column_to_rownames("outcome") |>
-  ggcorrplot(hc.order = TRUE,
-             method = "circle",
+  ggcorrplot(method = "circle",
+             #hc.order = TRUE,
              colors = c("#413E7EFF", "#DEF5E5FF", "#359EAAFF"),
              type = "full",
              outline.col = "grey20",
-             ggtheme = ggplot2::theme_linedraw)
+             ggtheme = ggplot2::theme_linedraw) + 
+  ggtitle("Correlations among prevalences")
 
-p_cors_journal_intercept
+p_cors_journal_intercept 
 
 quicksave("p_cors_journal_intercept", 7.5, 7.5)
 
@@ -1326,12 +1327,13 @@ p_cors_journal_slope <- var_cors_journal_slope |>
                              outcome == "neurophys" ~ "Neurophysiological",
                              outcome == "cognitiveability" ~ "Cognitive Ability")) |>
   column_to_rownames("outcome") |>
-  ggcorrplot(hc.order = TRUE, 
-             method = "circle",
+  ggcorrplot(method = "circle",
+             #hc.order = TRUE,
              colors = c("#413E7EFF", "#DEF5E5FF", "#359EAAFF"), 
              type = "full",
              outline.col = "grey20",
-             ggtheme = ggplot2::theme_linedraw)
+             ggtheme = ggplot2::theme_linedraw) + 
+  ggtitle("Correlations among trends")
 
 p_cors_journal_slope
 
