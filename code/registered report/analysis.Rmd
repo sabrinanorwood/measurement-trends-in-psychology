@@ -16,7 +16,6 @@ output:
 
 - prevalence-and-trend plot might need to choose between marginal and conditional means. perhaps component plots too.
 - fix "\n" bug in prevalence-and-trend plots
-- add detectability to trends plots and table
 - Add an (alternative) weighted model that weights by total articles published in each journal during that year? This should only produce results for the field as a whole, eg "Psychology (weighted by publications per journal per year)"
 - remove/refactor plotting of summary data in plots, as the real data will be planned-missing
 
@@ -907,6 +906,9 @@ posterior_trends |>
 
 ```{r fig.height=6, fig.width=11}
 
+# show_col(viridis::mako(25))
+# viridis::mako(25)
+
 p_trend_subfields <- posterior_trends |>
   filter(re_level != "journals") |>
   mutate(label = fct_relevel(label,
@@ -918,7 +920,8 @@ p_trend_subfields <- posterior_trends |>
                              "Developmental",
                              "I/O",
                              "Social/Personality")) |>
-  ggplot(aes(trend_estimate, outcome)) +
+  ggplot(aes(trend_estimate, outcome, color = trend_category)) +
+  geom_vline(xintercept = 0, linetype = "dotted") +
   geom_vline(xintercept = 0, linetype = "dotted") +
   geom_linerangeh(aes(xmin = trend_ci_lower, xmax = trend_ci_upper)) +
   geom_point() +
@@ -927,7 +930,8 @@ p_trend_subfields <- posterior_trends |>
   ylab("") +
   xlab("Trend (change per year)") +
   scale_x_continuous(labels = scales::label_percent(), breaks = breaks_pretty()) +
-  guides(color = guide_legend(title = "Measure type",
+  scale_color_manual(values = c("#38629DFF", "#2B1C35FF", "#359EAAFF")) +
+  guides(color = guide_legend(title = "Trend",
                               reverse = TRUE)) +
   facet_wrap(~ label, ncol = 2)
 
@@ -945,7 +949,8 @@ p_trend_journals <- posterior_trends |>
   filter(re_level == "journals") |>
   mutate(label = fct_relevel(label, sort(levels(label))),
          label = fct_rev(label)) |>
-  ggplot(aes(trend_estimate, label)) +
+  ggplot(aes(trend_estimate, label, color = trend_category)) +
+  geom_vline(xintercept = 0, linetype = "dotted") +
   geom_linerangeh(aes(xmin = trend_ci_lower, xmax = trend_ci_upper), position = position_dodge(width = .8)) +
   geom_point(position = position_dodge(width = .8)) +
   coord_cartesian(xlim = c(-.1, .1)) +
@@ -953,7 +958,8 @@ p_trend_journals <- posterior_trends |>
   ylab("") +
   xlab("Trend (change per year)") +
   scale_x_continuous(labels = scales::label_percent(), breaks = breaks_pretty()) +
-  guides(color = guide_legend(title = "Measure type",
+  scale_color_manual(values = c("#38629DFF", "#2B1C35FF", "#359EAAFF")) +
+  guides(color = guide_legend(title = "Trend",
                               reverse = TRUE)) +
   facet_wrap(~ outcome, ncol = 2)
 
