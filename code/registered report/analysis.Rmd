@@ -1071,7 +1071,9 @@ quicksave("p_prevalence_and_trend_field_conditional", 9, 8)
 
 ### Subfields
 
-```{r fig.height=8, fig.width=12}
+**Even more than the other chunks, this one takes time to run. Not run during dev. Change eval=TRUE to run.**
+
+```{r fig.height=8, fig.width=12, eval=FALSE}
 
 # calculate empirical means
 data_summary_subfields <- data_centered |>
@@ -1161,17 +1163,35 @@ categorical conclusions for field, subfield, and journal levels based on prevale
 
 ```{r}
 
+# join and clean up
 posterior_prevalence_and_trends <- 
   full_join(posterior_prevalence, 
             posterior_trends,
-            by = c("outcome", "label", "re_level", "type", "subfield", "journal"))
+            by = c("outcome", "label", "re_level", "type", "subfield", "journal")) |>
+  mutate(prevalence_estimate = rnd(prevalence_estimate),
+         prevalence_interval = paste0(rnd(prevalence_ci_lower), ", ", rnd(prevalence_ci_upper)),
+         trend_estimate = rnd(trend_estimate),
+         trend_interval = paste0(rnd(trend_ci_lower), ", ", rnd(trend_ci_upper))) |>
+  select(re_level, label, outcome, 
+         prevalence_estimate, prevalence_interval, prevalence_category, 
+         trend_estimate, trend_interval, trend_category) |>
+  arrange(desc(label), desc(outcome))
 
-write_csv(posterior_prevalence_and_trends, "../../data/registered report/results/posterior_prevalence_and_trends.csv")
+# save to disk
+posterior_prevalence_and_trends |>
+  filter(re_level %in% c("field", "subfields")) |>
+  select(-re_level) |>
+  write_csv("../../data/registered report/results/posterior_prevalence_and_trends_field_subfield.csv")
 
 posterior_prevalence_and_trends |>
-  filter(!str_detect(label, "journal")) |>
-  arrange(desc(label), desc(outcome)) |>
-  select(label, outcome, prevalence_category, trend_category, prevalence_results, trend_results) |>
+  filter(!re_level %in% c("field", "subfields")) |>
+  select(-re_level) |>
+  write_csv("../../data/registered report/results/posterior_prevalence_and_trends_journals.csv")
+
+# print the table just for field and subfields
+posterior_prevalence_and_trends |>
+  filter(re_level %in% c("field", "subfields")) |>
+  select(-re_level) |>
   kable() |>
   kable_classic(full_width = FALSE)
 
@@ -1196,26 +1216,20 @@ var_cors_journal <- var_cors$`subfield:journal`$cor |>
 var_cors_journal_intercept <- var_cors_journal |>
   filter(str_detect(var, "Intercept")) |>
   select(var, contains("Intercept") & contains("Estimate.")) |>
-  mutate_if(is.numeric, round_half_up, digits = 2) |>
   mutate(var = str_remove(var, "_Intercept")) %>%
   rename_with(~ str_remove(., "Estimate.")) %>%
   rename_with(~ str_remove(., "_Intercept"))
-
-# table
-var_cors_journal_intercept |>
-  kable(caption = "Correlations among random effects for prevalence at the journal level") |>
-  kable_classic(full_width = FALSE)
 
 # show_col(viridis::mako(25))
 # viridis::mako(25)
 
 # plot
-p_cors_journal_intercept <- var_cors_journal_intercept |>
+cors_journal_intercept <- var_cors_journal_intercept |>
   rename(outcome = var,
          "Direct Behavioral" = directbehavioral, 
          "Behavioral Proxy" = behavioralproxy, 
          "Self-Report about Behavior" = selfreportsaboutbehavior, 
-         "Self-Report about Subjective States" = selfreport, 
+         "Self-Report about Subjective States" = selfreportaboutsubjectivestate, 
          "Neuro/Bio/Psychophys" = neurobiopsychophys, 
          "Cognitive Ability" = cognitiveability) |>
   mutate(outcome = case_when(outcome == "directbehavioral" ~ "Direct Behavioral",		
@@ -1223,7 +1237,19 @@ p_cors_journal_intercept <- var_cors_journal_intercept |>
                              outcome == "selfreportsaboutbehavior" ~ "Self-Report about Behavior",
                              outcome == "selfreportaboutsubjectivestate" ~ "Self-Report about Subjective States",
                              outcome == "neurobiopsychophys" ~ "Neuro/Bio/Psychophys",
-                             outcome == "cognitiveability" ~ "Cognitive Ability")) |>
+                             outcome == "cognitiveability" ~ "Cognitive Ability")) 
+
+cors_journal_intercept |>
+  mutate_if(is.numeric, rnd) |>
+  write_csv("../../data/registered report/results/cors_journal_intercept.csv")
+
+# table
+cors_journal_intercept |>
+  mutate_if(is.numeric, rnd) |>
+  kable(caption = "Correlations among random effects for prevalence at the journal level") |>
+  kable_classic(full_width = FALSE)
+
+p_cors_journal_intercept <- cors_journal_intercept |>
   column_to_rownames("outcome") |>
   ggcorrplot(method = "circle",
              #hc.order = TRUE,
@@ -1241,32 +1267,28 @@ quicksave("p_cors_journal_intercept", 7.5, 7.5)
 
 #### Trend
 
+What was correlation between the change in prevalences over time in the different modes of measurement? As one mode becomes more/less common, what happened for the others? 
+
 ```{r fig.height=7.5, fig.width=7.5}
 
 # wrangle
 var_cors_journal_slope <- var_cors_journal |>
   filter(str_detect(var, "_year_centered")) |>
   select(var, contains("_year_centered") & contains("Estimate.")) |>
-  mutate_if(is.numeric, round_half_up, digits = 2) |>
   mutate(var = str_remove(var, "_year_centered")) %>%
   rename_with(~ str_remove(., "Estimate.")) %>%
   rename_with(~ str_remove(., "_year_centered"))
-
-# table
-var_cors_journal_slope |>
-  kable(caption = "Correlations among random effects for trend at the subfield level") |>
-  kable_classic(full_width = FALSE)
 
 # show_col(viridis::mako(25))
 # viridis::mako(25)
 
 # plot
-p_cors_journal_slope <- var_cors_journal_slope |> 
+cors_journal_slope <- var_cors_journal_slope |> 
   rename(outcome = var,
          "Direct Behavioral" = directbehavioral, 
          "Behavioral Proxy" = behavioralproxy, 
          "Self-Report about Behavior" = selfreportsaboutbehavior, 
-         "Self-Report about Subjective States" = selfreport, 
+         "Self-Report about Subjective States" = selfreportaboutsubjectivestate, 
          "Neuro/Bio/Psychophys" = neurobiopsychophys, 
          "Cognitive Ability" = cognitiveability) |>
   mutate(outcome = case_when(outcome == "directbehavioral" ~ "Direct Behavioral",		
@@ -1274,7 +1296,19 @@ p_cors_journal_slope <- var_cors_journal_slope |>
                              outcome == "selfreportsaboutbehavior" ~ "Self-Report about Behavior",
                              outcome == "selfreportaboutsubjectivestate" ~ "Self-Report about Subjective States",
                              outcome == "neurobiopsychophys" ~ "Neuro/Bio/Psychophys",
-                             outcome == "cognitiveability" ~ "Cognitive Ability")) |>
+                             outcome == "cognitiveability" ~ "Cognitive Ability")) 
+
+cors_journal_slope |>
+  mutate_if(is.numeric, rnd) |>
+  write_csv("../../data/registered report/results/cors_journal_slope.csv")
+
+# table
+cors_journal_slope |>
+  mutate_if(is.numeric, rnd) |>
+  kable(caption = "Correlations among random effects for trend at the subfield level") |>
+  kable_classic(full_width = FALSE)
+
+p_cors_journal_slope <- cors_journal_slope |>
   column_to_rownames("outcome") |>
   ggcorrplot(method = "circle",
              #hc.order = TRUE,
@@ -1310,49 +1344,32 @@ watermark <- function(fontsize = 20){
 
 ```
 
-## Prevalences
+## Subfields
 
-```{r fig.height=4.5, fig.width=9}
+```{r fig.height=6, fig.width=11}
 
 p_prevalence_subfields + watermark(10)
 
-quicksave("p_prevalence_subfields_watermark", 9, 4.5)
-
+quicksave("p_prevalence_subfields_watermark", 11, 6)
 
 p_trend_subfields + watermark(10)
 
-quicksave("p_trend_subfields_watermark", 9, 4.5)
+quicksave("p_trend_subfields_watermark", 11, 6)
 
 ```
 
-```{r fig.height=18, fig.width=9}
+## Journals
+
+```{r fig.height=12, fig.width=10}
 
 p_prevalence_journals + watermark(30)
 
-quicksave("p_prevalence_journals", 9, 18)
-
-```
-
-## Trends
-
-```{r fig.height=12, fig.width=9}
-
-p_prevalence_journals + watermark(30)
-
-quicksave("p_prevalence_journals_watermark", 9, 12)
+quicksave("p_prevalence_journals_watermark", 12, 10)
 
 
 p_trend_journals + watermark(30)
 
-quicksave("p_trend_journals_watermark", 9, 12)
-
-```
-
-```{r fig.height=18, fig.width=9}
-
-p_trend_journals + watermark(30)
-
-quicksave("p_trend_journals", 9, 18)
+quicksave("p_trend_journals_watermark", 12, 10)
 
 ```
 
@@ -1368,6 +1385,16 @@ quicksave("p_prevalence_and_trend_field_marginal_watermark", 9, 8)
 p_prevalence_and_trend_field_conditional + watermark()
 
 quicksave("p_prevalence_and_trend_field_conditional_watermark", 9, 8)
+
+```
+
+**Even more than the other chunks, this one takes time to run. Not run during dev. Change eval=TRUE to run.**
+
+```{r fig.height=8, fig.width=12, eval=FALSE}
+
+p_prevalence_and_trend_subfields + watermark()
+
+quicksave("p_prevalence_and_trend_subfields_watermark", 12, 8)
 
 ```
 
