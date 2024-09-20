@@ -2,3 +2,4 @@
 *.DS_Store
 *.Rhistory
 *old/
+code/registered report/models/fitted_model_simulated_data.rds
