@@ -14,8 +14,9 @@ output:
 
 # TODO
 
+- update prior in this file and the other to match prior justification
 - prevalence-and-trend plot might need to choose between marginal and conditional means. perhaps component plots too.
-- fix "\n" bug in prevalence-and-trend plots
+- try to reproduce "\n" warning/error in prevalence-and-trend plots and fix
 - Add an (alternative) weighted model that weights by total articles published in each journal during that year? This should only produce results for the field as a whole, eg "Psychology (weighted by publications per journal per year)"
 - remove/refactor plotting of summary data in plots, as the real data will be planned-missing
 
@@ -33,6 +34,7 @@ library(tidyr)
 library(tibble)
 library(stringr)
 library(forcats)
+library(readxl)
 library(purrr)
 library(readr)
 library(janitor)
@@ -115,16 +117,13 @@ data_simulated <-
     selfreportsaboutbehavior = rbinom(n = n_articles_total,
                                       size = 1, # values between 0 and 1
                                       prob = .1), # probability of a given study containing such a measure
-    mixed = rbinom(n = n_articles_total,
-                   size = 1, # values between 0 and 1
-                   prob = .1), # probability of a given study containing such a measure
-    selfreport = c(rbinom(n = n_articles_total/2,
+    selfreportaboutsubjectivestate = c(rbinom(n = n_articles_total/2,
                           size = 1, # values between 0 and 1
                           prob = .95), # probability of a given study containing such a measure
                    rbinom(n = n_articles_total/2,
                           size = 1, # values between 0 and 1
                           prob = .70)),
-    neurophys = rbinom(n = n_articles_total,
+    neurobiopsychophys = rbinom(n = n_articles_total,
                        size = 1, # values between 0 and 1
                        prob = .1), # probability of a given study containing such a measure
     cognitiveability = rbinom(n = n_articles_total,
@@ -136,16 +135,41 @@ data_simulated <-
                       rep("Cognitive", n_articles_per_journal * n_journals_per_subfield),
                       rep("Clinical", n_articles_per_journal * n_journals_per_subfield),
                       rep("Developmental", n_articles_per_journal * n_journals_per_subfield),
-                      rep("I/O", n_articles_per_journal * n_journals_per_subfield),
-                      rep("Social/Personality", n_articles_per_journal * n_journals_per_subfield)),
+                      rep("Industrial & Organizational", n_articles_per_journal * n_journals_per_subfield),
+                      rep("Social & Personality", n_articles_per_journal * n_journals_per_subfield)),
          subfield = as.factor(subfield),
-         journal = paste(subfield, "journal", seq(from = 1, to = 5)))
+         journal_label = paste(subfield, "journal", seq(from = 1, to = 5)))
 
+# weights
+data_weights <- data_simulated |>
+  distinct(subfield, journal_label) |>
+  mutate(total_articles = round(runif(n = n(), min = 10*4, max = 10*12), 0),
+         total_articles = case_when(subfield == "General" ~ total_articles + 80,
+                                    subfield == "Clinical" ~ total_articles + 40,
+                                    TRUE ~ total_articles),
+         percent_of_all_articles = total_articles/sum(total_articles)*100)
+
+data_simulated <- data_simulated |>
+  left_join(data_weights, by = c("subfield", "journal_label"))
+
+journal_names <- read_xlsx("../../data/registered report/journals.xlsx")
+
+data_simulated <- data_simulated |>
+  left_join(journal_names, by = c("subfield", "journal_label")) |>
+  rename(journal = journal_abbreviation)
 
 # save for reproducibility
 if(!file.exists("../../data/registered report/simulated/data_simulated.csv")){
   write_csv(data_simulated, "../../data/registered report/simulated/data_simulated.csv")
 }
+
+# pull the journal abbreviations, for ordering figures and tables later
+subfield_and_journal_labels <- journal_names |>
+  pull(journal_abbreviation)
+
+subfield_and_journal_labels_without_subfields <- journal_names |>
+  drop_na(journal_name) |>
+  pull(journal_abbreviation)
 
 ```
 
@@ -154,15 +178,16 @@ if(!file.exists("../../data/registered report/simulated/data_simulated.csv")){
 ```{r}
 
 data_simulated |>
-  count(subfield, journal)
+  count(subfield, journal) |>
+  kable() |>
+  kable_classic(full_width = FALSE)
 
 data_simulated |>
   summarize(mean_directbehavioral = mean(directbehavioral),
             mean_behavioralproxy = mean(behavioralproxy),
             mean_selfreportsaboutbehavior = mean(selfreportsaboutbehavior),
-            mean_mixed = mean(mixed),
-            mean_selfreport = mean(selfreport),
-            mean_neurophys = mean(neurophys),
+            mean_selfreportaboutsubjectivestate = mean(selfreportaboutsubjectivestate),
+            mean_neurobiopsychophys = mean(neurobiopsychophys),
             mean_cognitiveability = mean(cognitiveability)) |>
   mutate_all(round_half_up, digits = 3) |>
   kable() |>
@@ -173,9 +198,8 @@ data_simulated |>
   summarize(mean_directbehavioral = mean(directbehavioral),
             mean_behavioralproxy = mean(behavioralproxy),
             mean_selfreportsaboutbehavior = mean(selfreportsaboutbehavior),
-            mean_mixed = mean(mixed),
-            mean_selfreport = mean(selfreport),
-            mean_neurophys = mean(neurophys),
+            mean_selfreportaboutsubjectivestate = mean(selfreportaboutsubjectivestate),
+            mean_neurobiopsychophys = mean(neurobiopsychophys),
             mean_cognitiveability = mean(cognitiveability)) |>
   mutate_if(is.numeric, round_half_up, digits = 3) |>
   kable() |>
@@ -244,7 +268,7 @@ The asymmetry between low and high is intentional, reflecting our stronger belie
 
 illustrate_intercept_prior <- function(mean_prob, sd_logodds){
   df_normal_logodds <- 
-    tibble(logodds = rnorm(mean = qlogis(mean_prob), sd = sd_logodds, n = 1000000)) |>
+    tibble(logodds = rnorm(mean = qlogis(mean_prob), sd = sd_logodds, n = 10000000)) |>
     mutate(probability = plogis(logodds))
   
   ggplot(df_normal_logodds, aes(probability)) +
@@ -256,9 +280,13 @@ illustrate_intercept_prior <- function(mean_prob, sd_logodds){
     ggtitle(paste0("Prevalence prior: \nnormal(M = qlogis(", mean_prob, "), SD = 1) log-odds distribution converted to probabilities"))
 }
 
-illustrate_intercept_prior(mean_prob = .50, sd_logodds = 1.4)
-illustrate_intercept_prior(mean_prob = .70, sd_logodds = 1)
-illustrate_intercept_prior(mean_prob = .25, sd_logodds = 1)
+illustrate_intercept_prior(mean_prob = .70, sd_logodds = 1) # self reports of subjective experience
+illustrate_intercept_prior(mean_prob = .25, sd_logodds = 1) # direct behavioral measures
+illustrate_intercept_prior(mean_prob = .50, sd_logodds = 1.4) # all other modes, given our very weak beliefs and the potential for variation between subfields/journals 
+
+qlogis(.50)
+qlogis(.70)
+qlogis(.25)
 
 ```
 
@@ -340,39 +368,45 @@ data_centered <- data_simulated |>
   mutate(year_centered = year - 2016)
 
 # specify Wilkinson notation for the model
+# note that the | p | and | q | syntax specifies that the correlations among the random effects be modelled (ie not assumed to be zero)
 formulas <- 
-  bf(formula = directbehavioral ~         1 + year_centered + (1 + year_centered | p | subfield) + (1 + year_centered | q | subfield:journal)) +
-  bf(formula = behavioralproxy ~          1 + year_centered + (1 + year_centered | p | subfield) + (1 + year_centered | q | subfield:journal)) +
-  bf(formula = selfreportsaboutbehavior ~ 1 + year_centered + (1 + year_centered | p | subfield) + (1 + year_centered | q | subfield:journal)) +
-  bf(formula = mixed ~                    1 + year_centered + (1 + year_centered | p | subfield) + (1 + year_centered | q | subfield:journal)) +
-  bf(formula = selfreport ~               1 + year_centered + (1 + year_centered | p | subfield) + (1 + year_centered | q | subfield:journal)) +
-  bf(formula = neurophys ~                1 + year_centered + (1 + year_centered | p | subfield) + (1 + year_centered | q | subfield:journal)) +
-  bf(formula = cognitiveability ~         1 + year_centered + (1 + year_centered | p | subfield) + (1 + year_centered | q | subfield:journal))
+  bf(formula = directbehavioral | weights(percent_of_all_articles) ~               1 + year_centered + (1 + year_centered | p | subfield) + (1 + year_centered | q | subfield:journal)) +
+  bf(formula = behavioralproxy | weights(percent_of_all_articles) ~                1 + year_centered + (1 + year_centered | p | subfield) + (1 + year_centered | q | subfield:journal)) +
+  bf(formula = selfreportsaboutbehavior | weights(percent_of_all_articles) ~       1 + year_centered + (1 + year_centered | p | subfield) + (1 + year_centered | q | subfield:journal)) +
+  bf(formula = selfreportaboutsubjectivestate | weights(percent_of_all_articles) ~ 1 + year_centered + (1 + year_centered | p | subfield) + (1 + year_centered | q | subfield:journal)) +
+  bf(formula = neurobiopsychophys | weights(percent_of_all_articles) ~             1 + year_centered + (1 + year_centered | p | subfield) + (1 + year_centered | q | subfield:journal)) +
+  bf(formula = cognitiveability | weights(percent_of_all_articles) ~               1 + year_centered + (1 + year_centered | p | subfield) + (1 + year_centered | q | subfield:journal))
+
+# # it is plausible that a reviewer asks us for unweighted models for robustness, although it is harder to know how to interpret the field-wide prevalences and trends given meaningful differences in size of the subfields. nonetheless, I retain the code here.
+# formulas <- 
+#   bf(formula = directbehavioral ~               1 + year_centered + (1 + year_centered | p | subfield) + (1 + year_centered | q | subfield:journal)) +
+#   bf(formula = behavioralproxy ~                1 + year_centered + (1 + year_centered | p | subfield) + (1 + year_centered | q | subfield:journal)) +
+#   bf(formula = selfreportsaboutbehavior ~       1 + year_centered + (1 + year_centered | p | subfield) + (1 + year_centered | q | subfield:journal)) +
+#   bf(formula = selfreportaboutsubjectivestate ~ 1 + year_centered + (1 + year_centered | p | subfield) + (1 + year_centered | q | subfield:journal)) +
+#   bf(formula = neurobiopsychophys ~             1 + year_centered + (1 + year_centered | p | subfield) + (1 + year_centered | q | subfield:journal)) +
+#   bf(formula = cognitiveability ~               1 + year_centered + (1 + year_centered | p | subfield) + (1 + year_centered | q | subfield:journal)) 
 
 # specify priors
 priors <- 
-  prior(normal(-2.20, 1), class = Intercept, resp = "directbehavioral") +
-  prior(normal(-1.39, 1), class = Intercept, resp = "behavioralproxy") + # qlogis(.20)
-  prior(normal(+0.00, 1), class = Intercept, resp = "selfreportsaboutbehavior") + # qlogis(.50)
-  prior(normal(+1.10, 1), class = Intercept, resp = "mixed") + # qlogis(.75)
-  prior(normal(+2.20, 1), class = Intercept, resp = "selfreport") + # qlogis(.90)
-  prior(normal(-2.20, 1), class = Intercept, resp = "neurophys") + # qlogis(.10)
-  prior(normal(-2.20, 1), class = Intercept, resp = "cognitiveability") + # qlogis(.10)
+  prior(normal(-1.10, 1.0), class = Intercept, resp = "directbehavioral") + # qlogis(.25)
+  prior(normal(+0.00, 1.4), class = Intercept, resp = "behavioralproxy") + # qlogis(.50)
+  prior(normal(+0.00, 1.4), class = Intercept, resp = "selfreportsaboutbehavior") + # qlogis(.50)
+  prior(normal(+0.85, 1.0), class = Intercept, resp = "selfreportaboutsubjectivestate") + # qlogis(.70)
+  prior(normal(+0.00, 1.4), class = Intercept, resp = "neurobiopsychophys") + # qlogis(.50)
+  prior(normal(+0.00, 1.4), class = Intercept, resp = "cognitiveability") + # qlogis(.50)
   
-  prior(normal(0, 0.5),   class = b,         resp = "directbehavioral") +
-  prior(normal(0, 0.5),   class = b,         resp = "behavioralproxy") + 
-  prior(normal(0, 0.5),   class = b,         resp = "selfreportsaboutbehavior") + 
-  prior(normal(0, 0.5),   class = b,         resp = "mixed") + 
-  prior(normal(0, 0.5),   class = b,         resp = "selfreport") + 
-  prior(normal(0, 0.5),   class = b,         resp = "neurophys") + 
-  prior(normal(0, 0.5),   class = b,         resp = "cognitiveability") + 
+  prior(normal(0, 0.2),   class = b,         resp = "directbehavioral") +
+  prior(normal(0, 0.2),   class = b,         resp = "behavioralproxy") + 
+  prior(normal(0, 0.2),   class = b,         resp = "selfreportsaboutbehavior") + 
+  prior(normal(0, 0.2),   class = b,         resp = "selfreportaboutsubjectivestate") + 
+  prior(normal(0, 0.2),   class = b,         resp = "neurobiopsychophys") + 
+  prior(normal(0, 0.2),   class = b,         resp = "cognitiveability") + 
   
   prior(exponential(1),   class = sd,        resp = "directbehavioral") +
   prior(exponential(1),   class = sd,        resp = "behavioralproxy") + 
   prior(exponential(1),   class = sd,        resp = "selfreportsaboutbehavior") + 
-  prior(exponential(1),   class = sd,        resp = "mixed") + 
-  prior(exponential(1),   class = sd,        resp = "selfreport") + 
-  prior(exponential(1),   class = sd,        resp = "neurophys") + 
+  prior(exponential(1),   class = sd,        resp = "selfreportaboutsubjectivestate") + 
+  prior(exponential(1),   class = sd,        resp = "neurobiopsychophys") + 
   prior(exponential(1),   class = sd,        resp = "cognitiveability") + 
   
   prior(lkj_corr_cholesky(1), class = cor)
@@ -387,12 +421,21 @@ fitted_model <- brm(
   seed    = 42,
   iter    = 8000, 
   warmup  = 4000, 
+  
+  # sample prior only for testing and dev
   #sample_prior = "only",
   #file = "models/fitted_model_prioronly"
+  
+  # fit using simulated data for testing and dev
   sample_prior = "no",
   file = "models/fitted_model_simulated_data"
+  
+  # when real data is in after Stage 1 acceptance, fit using real data
+  #sample_prior = "no",
   #file = "models/fitted_model"
-  #control = list(adapt_delta = .99), can be increased from the default to eg .99 if there are divergent transitions
+  
+  # if there are divergent transitions, can be increased from the default to eg .99 
+  #control = list(adapt_delta = .99)
 )
 
 ```
@@ -406,9 +449,8 @@ summary(fitted_model)
 pp_check(fitted_model, ndraws = 100, resp = "directbehavioral")
 pp_check(fitted_model, ndraws = 100, resp = "behavioralproxy")
 pp_check(fitted_model, ndraws = 100, resp = "selfreportsaboutbehavior")
-pp_check(fitted_model, ndraws = 100, resp = "mixed")
-pp_check(fitted_model, ndraws = 100, resp = "selfreport")
-pp_check(fitted_model, ndraws = 100, resp = "neurophys")
+pp_check(fitted_model, ndraws = 100, resp = "selfreportaboutsubjectivestate")
+pp_check(fitted_model, ndraws = 100, resp = "neurobiopsychophys")
 pp_check(fitted_model, ndraws = 100, resp = "cognitiveability")
 
 plot(fitted_model, comparisons = TRUE, ask = FALSE)
@@ -416,6 +458,17 @@ plot(fitted_model, comparisons = TRUE, ask = FALSE)
 ```
 
 ## Extract estimates
+
+### Resources 
+
+For consistent and precise terminology, we relied on [Heiss (2021)](https://www.andrewheiss.com/blog/2021/11/10/ame-bayes-re-guide/#overall-summary-of-different-approaches) and [Heiss (2022)](https://www.andrewheiss.com/blog/2022/05/20/marginalia/#tldr-overall-summary-of-all-these-marginal-effects-approaches) which describe marginal vs conditional effects implemented in the marginaleffects vs emmeans packages.
+
+Following Heiss's (2021, 2022) terminology, we extract:
+
+- Marginal Global Mean (aka the Average Marginal Effect, AME): "typically, psychology articles..." - intervals are akin to confidence intervals in Frequentist meta analysis
+- Conditional Global Mean (aka the Group Average Marginal Effect, G-AME)): "a typical psychology article..." - intervals are akin to prediction intervals in Frequentist meta analysis, will be equal or wider than the AME estimates.
+- Conditional Mean by Subfield
+- Conditional Mean by Journal
 
 ### Prevalence
 
@@ -528,85 +581,40 @@ if(exists("models/posterior_prevalence.rds")){
                              re_level == "field" & type == "conditional" ~ "Psychology (conditional)",
                              re_level == "subfields" & journal == "hypothetical typical journal" ~ subfield,
                              journal != "hypothetical typical journal" & !is.na(journal) ~ journal)) |>
-    mutate(label = fct_relevel(
-      label,
-      "Psychology (marginal)",
-      "Psychology (conditional)",
-      
-      "General", 
-      "General journal 2", 
-      "General journal 3", 
-      "General journal 4", 
-      "General journal 5", 
-      "General journal 1", 
-      
-      "Cognitive", 
-      "Cognitive journal 2", 
-      "Cognitive journal 3", 
-      "Cognitive journal 4", 
-      "Cognitive journal 5", 
-      "Cognitive journal 1", 
-      
-      "Clinical", 
-      "Clinical journal 3", 
-      "Clinical journal 4", 
-      "Clinical journal 5", 
-      "Clinical journal 1", 
-      "Clinical journal 2", 
-      
-      "Developmental", 
-      "Developmental journal 4", 
-      "Developmental journal 5", 
-      "Developmental journal 1", 
-      "Developmental journal 2", 
-      "Developmental journal 3", 
-      
-      "I/O", 
-      "I/O journal 5", 
-      "I/O journal 1", 
-      "I/O journal 2", 
-      "I/O journal 3", 
-      "I/O journal 4", 
-      
-      "Social/Personality", 
-      "Social/Personality journal 1", 
-      "Social/Personality journal 2", 
-      "Social/Personality journal 3", 
-      "Social/Personality journal 4", 
-      "Social/Personality journal 5"                   
-    ),
+    mutate(label = fct_relevel(label,
+                               "Psychology (marginal)",
+                               "Psychology (conditional)",
+                               subfield_and_journal_labels),
     label = fct_rev(label)) |>
-    mutate(outcome = case_when(outcome == "directbehavioral" ~ "Direct Behavioral Measure",		
+    mutate(outcome = case_when(outcome == "directbehavioral" ~ "Direct Behavioral",		
                                outcome == "behavioralproxy" ~ "Behavioral Proxy",
                                outcome == "selfreportsaboutbehavior" ~ "Self-Report about Behavior",
-                               outcome == "mixed" ~ "Mixed Self-Report",
-                               outcome == "selfreport" ~ "Self-Report about Subjective Experience",
-                               outcome == "neurophys" ~ "Neurophysiological",
+                               outcome == "selfreportaboutsubjectivestate" ~ "Self-Report about Subjective States",
+                               outcome == "neurobiopsychophys" ~ "Neuro/Bio/Psychophys",
                                outcome == "cognitiveability" ~ "Cognitive Ability",
                                TRUE ~ outcome),
            outcome = fct_relevel(outcome, 
-                                 "Direct Behavioral Measure",		
+                                 "Direct Behavioral",		
                                  "Behavioral Proxy",
                                  "Self-Report about Behavior",
-                                 "Mixed Self-Report",
-                                 "Self-Report about Subjective Experience",
-                                 "Neurophysiological",
+                                 "Self-Report about Subjective States",
+                                 "Neuro/Bio/Psychophys",
                                  "Cognitive Ability"),
            outcome = fct_rev(outcome),
            subfield = fct_relevel(subfield,
                                   "hypothetical typical subfield",
+                                  "General",
                                   "Clinical",
                                   "Cognitive",
                                   "Developmental",
-                                  "General",
-                                  "I/O",
-                                  "Social/Personality")) |>
+                                  "Industrial & Organizational",
+                                  "Social & Personality")) |>
     mutate(prevalence_category = case_when(prevalence_estimate < .05 ~ "Rare",
                                            prevalence_estimate >= .05 & prevalence_estimate < .10 ~ "Uncommon",
                                            prevalence_estimate >= .10 & prevalence_estimate < .25 ~ "Occasional",
                                            prevalence_estimate >= .25 & prevalence_estimate < .50 ~ "Common",
                                            prevalence_estimate >= .50 ~ "Frequent"),
-           prevalence_results = paste0(rnd(prevalence_estimate), " 95% CI [", rnd(prevalence_ci_lower), ", ", rnd(prevalence_ci_upper), "]")) |>
+           prevalence_results = paste0(rnd(prevalence_estimate), ", 95% CI [", rnd(prevalence_ci_lower), ", ", rnd(prevalence_ci_upper), "]")) |>
     select(outcome, label, re_level, type, subfield, journal, 
            prevalence_estimate, prevalence_ci_lower, prevalence_ci_upper, prevalence_category, prevalence_results) |>
     arrange(outcome, desc(label), subfield)
@@ -639,11 +647,11 @@ p_prevalence_subfields <- posterior_prevalence |>
             fill = "grey90") +
   geom_rect(aes(xmin = 0.50, xmax = 1.00, ymin = -Inf, ymax = Inf, color = NULL),
             fill = "grey95") +
-  annotate("text", x = 0.0250, y = "Mixed Self-Report", label = "Rare",       size = 4, color = "grey30", angle = 90) +
-  annotate("text", x = 0.0725, y = "Mixed Self-Report", label = "Uncommon",   size = 4, color = "grey40", angle = 90) +
-  annotate("text", x = 0.1750, y = "Mixed Self-Report", label = "Occasional", size = 4, color = "grey50", angle = 90) +
-  annotate("text", x = 0.3750, y = "Mixed Self-Report", label = "Common",     size = 4, color = "grey60", angle = 90) +
-  annotate("text", x = 0.7500, y = "Mixed Self-Report", label = "Frequent",   size = 4, color = "grey65", angle = 90) +
+  annotate("text", x = 0.0250, y = "Self-Report about Behavior", label = "Rare",       size = 4, color = "grey30", angle = 90) +
+  annotate("text", x = 0.0725, y = "Self-Report about Behavior", label = "Uncommon",   size = 4, color = "grey40", angle = 90) +
+  annotate("text", x = 0.1750, y = "Self-Report about Behavior", label = "Occasional", size = 4, color = "grey50", angle = 90) +
+  annotate("text", x = 0.3750, y = "Self-Report about Behavior", label = "Common",     size = 4, color = "grey60", angle = 90) +
+  annotate("text", x = 0.7500, y = "Self-Report about Behavior", label = "Frequent",   size = 4, color = "grey65", angle = 90) +
   geom_linerangeh(aes(xmin = prevalence_ci_lower, xmax = prevalence_ci_upper), position = position_dodge(width = .7)) +
   geom_point(position = position_dodge(width = .7)) +
   coord_cartesian(xlim = c(0, 1)) +
@@ -658,7 +666,7 @@ p_prevalence_subfields <- posterior_prevalence |>
                      breaks = c(0, 0.05, 0.10, 0.25, 0.50, 0.75, 1),
                      minor_breaks = NULL,
                      expand = c(0,0)) +
-  guides(color = guide_legend(title = "Measure type",
+  guides(color = guide_legend(title = "Measure mode",
                               reverse = TRUE)) +
   facet_wrap(~ fct_rev(label), ncol = 2)
 
@@ -670,34 +678,32 @@ quicksave("p_prevalence_subfields", 11, 6)
 
 #### Plot journals
 
-```{r fig.height=18, fig.width=9}
+```{r fig.height=10, fig.width=12}
 
 p_prevalence_journals <- posterior_prevalence |>
   filter(re_level == "journals") |>
-  mutate(label = fct_relevel(label, sort(levels(label))),
+  mutate(label = fct_relevel(label, subfield_and_journal_labels_without_subfields),
          label = fct_rev(label),
          outcome = fct_relevel(outcome, 
-                               "Direct Behavioral Measure",		
+                               "Direct Behavioral",		
                                "Behavioral Proxy",
                                "Self-Report about Behavior",
-                               "Mixed Self-Report",
-                               "Self-Report about Subjective Experience",
-                               "Neurophysiological",
+                               "Self-Report about Subjective States",
+                               "Neuro/Bio/Psychophys",
                                "Cognitive Ability")) |>
-  ggplot(aes(prevalence_estimate, label)) +
+  ggplot(aes(prevalence_estimate, label, color = subfield)) +
   geom_linerangeh(aes(xmin = prevalence_ci_lower, xmax = prevalence_ci_upper)) +
   geom_point() +
   coord_cartesian(xlim = c(0, 1)) +
   theme_linedraw() +
   ylab("") +
   xlab("Prevalence") +
-  guides(color = guide_legend(title = "Measure type",
-                              reverse = TRUE)) +
-  facet_wrap(~ outcome, ncol = 2)
+  guides(color = guide_legend(title = "Measure mode")) +
+  facet_wrap(~ outcome, ncol = 3)
 
 p_prevalence_journals
 
-quicksave("p_prevalence_journals", 9, 18)
+quicksave("p_prevalence_journals", 12, 10)
 
 ```
 
@@ -810,83 +816,38 @@ if(exists("models/posterior_trends.rds")){
                              re_level == "field" & type == "conditional" ~ "Psychology (conditional)",
                              re_level == "subfields" & journal == "hypothetical typical journal" ~ subfield,
                              journal != "hypothetical typical journal" & !is.na(journal) ~ journal)) |>
-    mutate(label = fct_relevel(
-      label,
-      "Psychology (marginal)",
-      "Psychology (conditional)",
-      
-      "General", 
-      "General journal 2", 
-      "General journal 3", 
-      "General journal 4", 
-      "General journal 5", 
-      "General journal 1", 
-      
-      "Cognitive", 
-      "Cognitive journal 2", 
-      "Cognitive journal 3", 
-      "Cognitive journal 4", 
-      "Cognitive journal 5", 
-      "Cognitive journal 1", 
-      
-      "Clinical", 
-      "Clinical journal 3", 
-      "Clinical journal 4", 
-      "Clinical journal 5", 
-      "Clinical journal 1", 
-      "Clinical journal 2", 
-      
-      "Developmental", 
-      "Developmental journal 4", 
-      "Developmental journal 5", 
-      "Developmental journal 1", 
-      "Developmental journal 2", 
-      "Developmental journal 3", 
-      
-      "I/O", 
-      "I/O journal 5", 
-      "I/O journal 1", 
-      "I/O journal 2", 
-      "I/O journal 3", 
-      "I/O journal 4", 
-      
-      "Social/Personality", 
-      "Social/Personality journal 1", 
-      "Social/Personality journal 2", 
-      "Social/Personality journal 3", 
-      "Social/Personality journal 4", 
-      "Social/Personality journal 5"                   
-    ),
+    mutate(label = fct_relevel(label,
+                               "Psychology (marginal)",
+                               "Psychology (conditional)",
+                               subfield_and_journal_labels),
     label = fct_rev(label)) |>
-    mutate(outcome = case_when(outcome == "directbehavioral" ~ "Direct Behavioral Measure",		
+    mutate(outcome = case_when(outcome == "directbehavioral" ~ "Direct Behavioral",		
                                outcome == "behavioralproxy" ~ "Behavioral Proxy",
                                outcome == "selfreportsaboutbehavior" ~ "Self-Report about Behavior",
-                               outcome == "mixed" ~ "Mixed Self-Report",
-                               outcome == "selfreport" ~ "Self-Report about Subjective Experience",
-                               outcome == "neurophys" ~ "Neurophysiological",
+                               outcome == "selfreportaboutsubjectivestate" ~ "Self-Report about Subjective States",
+                               outcome == "neurobiopsychophys" ~ "Neuro/Bio/Psychophys",
                                outcome == "cognitiveability" ~ "Cognitive Ability",
                                TRUE ~ outcome),
            outcome = fct_relevel(outcome, 
-                                 "Direct Behavioral Measure",		
+                                 "Direct Behavioral",		
                                  "Behavioral Proxy",
                                  "Self-Report about Behavior",
-                                 "Mixed Self-Report",
-                                 "Self-Report about Subjective Experience",
-                                 "Neurophysiological",
+                                 "Self-Report about Subjective States",
+                                 "Neuro/Bio/Psychophys",
                                  "Cognitive Ability"),
            outcome = fct_rev(outcome),
            subfield = fct_relevel(subfield,
                                   "hypothetical typical subfield",
+                                  "General",
                                   "Clinical",
                                   "Cognitive",
                                   "Developmental",
-                                  "General",
-                                  "I/O",
-                                  "Social/Personality")) |>
+                                  "Industrial & Organizational",
+                                  "Social & Personality")) |>
     mutate(trend_category = case_when(trend_ci_lower > 0 ~ "Increasing",
                                       trend_ci_upper < 0 ~ "Decreasing",
                                       TRUE ~ "No trend detected"),
-           trend_results = paste0(rnd(trend_estimate), " 95% CI [", rnd(trend_ci_lower), ", ", rnd(trend_ci_upper), "]")) |>
+           trend_results = paste0(rnd(trend_estimate), ", 95% CI [", rnd(trend_ci_lower), ", ", rnd(trend_ci_upper), "]")) |>
     select(outcome, label, re_level, type, subfield, journal, 
            trend_estimate, trend_ci_lower, trend_ci_upper, trend_category, trend_results) |>
     arrange(outcome, desc(label), subfield)
@@ -918,14 +879,14 @@ p_trend_subfields <- posterior_trends |>
                              "Clinical",
                              "Cognitive",
                              "Developmental",
-                             "I/O",
-                             "Social/Personality")) |>
+                             "Industrial & Organizational",
+                             "Social & Personality")) |>
   ggplot(aes(trend_estimate, outcome, color = trend_category)) +
   geom_vline(xintercept = 0, linetype = "dotted") +
   geom_vline(xintercept = 0, linetype = "dotted") +
   geom_linerangeh(aes(xmin = trend_ci_lower, xmax = trend_ci_upper)) +
   geom_point() +
-  coord_cartesian(xlim = c(-.1, .1)) +
+  #coord_cartesian(xlim = c(-.1, .1)) +
   theme_linedraw() +
   ylab("") +
   xlab("Trend (change per year)") +
@@ -943,29 +904,28 @@ quicksave("p_trend_subfields", 11, 6)
 
 #### Plot journals
 
-```{r fig.height=18, fig.width=9}
+```{r fig.height=10, fig.width=12}
 
 p_trend_journals <- posterior_trends |>
   filter(re_level == "journals") |>
-  mutate(label = fct_relevel(label, sort(levels(label))),
+  mutate(label = fct_relevel(label, subfield_and_journal_labels_without_subfields),
          label = fct_rev(label)) |>
-  ggplot(aes(trend_estimate, label, color = trend_category)) +
+  ggplot(aes(trend_estimate, label, color = subfield)) + # color = trend_category, 
   geom_vline(xintercept = 0, linetype = "dotted") +
   geom_linerangeh(aes(xmin = trend_ci_lower, xmax = trend_ci_upper), position = position_dodge(width = .8)) +
   geom_point(position = position_dodge(width = .8)) +
-  coord_cartesian(xlim = c(-.1, .1)) +
+  #coord_cartesian(xlim = c(-.1, .1)) +
   theme_linedraw() +
   ylab("") +
   xlab("Trend (change per year)") +
   scale_x_continuous(labels = scales::label_percent(), breaks = breaks_pretty()) +
-  scale_color_manual(values = c("#38629DFF", "#2B1C35FF", "#359EAAFF")) +
-  guides(color = guide_legend(title = "Trend",
-                              reverse = TRUE)) +
-  facet_wrap(~ outcome, ncol = 2)
+  #scale_color_manual(values = c("#38629DFF", "#2B1C35FF", "#359EAAFF")) +
+  guides(color = guide_legend(title = "Trend")) +
+  facet_wrap(~ outcome, ncol = 3)
 
 p_trend_journals
 
-quicksave("p_trend_journals", 9, 18)
+quicksave("p_trend_journals", 12, 10)
 
 ```
 
@@ -980,28 +940,25 @@ data_summary_field <- data_centered |>
   pivot_longer(cols = c("directbehavioral", 
                         "behavioralproxy",
                         "selfreportsaboutbehavior",
-                        "mixed",
-                        "selfreport",
-                        "neurophys",
+                        "selfreportaboutsubjectivestate",
+                        "neurobiopsychophys",
                         "cognitiveability"),
                names_to = "outcome",
                values_to = "used") |>
   group_by(year, outcome) |>
   summarize(proportion = mean(used)) |>
-  mutate(outcome = case_when(outcome == "directbehavioral" ~ "Direct Behavioral Measure",		
+  mutate(outcome = case_when(outcome == "directbehavioral" ~ "Direct Behavioral",		
                              outcome == "behavioralproxy" ~ "Behavioral Proxy",
                              outcome == "selfreportsaboutbehavior" ~ "Self-Report about Behavior",
-                             outcome == "mixed" ~ "Mixed Self-Report",
-                             outcome == "selfreport" ~ "Self-Report about Subjective Experience",
-                             outcome == "neurophys" ~ "Neurophysiological",
+                             outcome == "selfreportaboutsubjectivestate" ~ "Self-Report about Subjective States",
+                             outcome == "neurobiopsychophys" ~ "Neuro/Bio/Psychophys",
                              outcome == "cognitiveability" ~ "Cognitive Ability"),
          outcome = fct_relevel(outcome, 
-                               "Direct Behavioral Measure",		
+                               "Direct Behavioral",		
                                "Behavioral Proxy",
                                "Self-Report about Behavior",
-                               "Mixed Self-Report",
-                               "Self-Report about Subjective Experience",
-                               "Neurophysiological",
+                               "Self-Report about Subjective States",
+                               "Neuro/Bio/Psychophys",
                                "Cognitive Ability"))
 
 if(exists("models/posterior_prevalence_field_marginal_by_year.rds") &
@@ -1027,20 +984,18 @@ if(exists("models/posterior_prevalence_field_marginal_by_year.rds") &
                       est_prevalence, 
                       fit = fitted_model)) |>
     unnest(res) |>
-    mutate(outcome = case_when(outcome == "directbehavioral" ~ "Direct Behavioral Measure",		
+    mutate(outcome = case_when(outcome == "directbehavioral" ~ "Direct Behavioral",		
                                outcome == "behavioralproxy" ~ "Behavioral Proxy",
                                outcome == "selfreportsaboutbehavior" ~ "Self-Report about Behavior",
-                               outcome == "mixed" ~ "Mixed Self-Report",
-                               outcome == "selfreport" ~ "Self-Report about Subjective Experience",
-                               outcome == "neurophys" ~ "Neurophysiological",
+                               outcome == "selfreportaboutsubjectivestate" ~ "Self-Report about Subjective States",
+                               outcome == "neurobiopsychophys" ~ "Neuro/Bio/Psychophys",
                                outcome == "cognitiveability" ~ "Cognitive Ability"),
            outcome = fct_relevel(outcome, 
-                                 "Direct Behavioral Measure",		
+                                 "Direct Behavioral",		
                                  "Behavioral Proxy",
                                  "Self-Report about Behavior",
-                                 "Mixed Self-Report",
-                                 "Self-Report about Subjective Experience",
-                                 "Neurophysiological",
+                                 "Self-Report about Subjective States",
+                                 "Neuro/Bio/Psychophys",
                                  "Cognitive Ability"))
   
   # field - conditional effect
@@ -1055,20 +1010,18 @@ if(exists("models/posterior_prevalence_field_marginal_by_year.rds") &
                       est_prevalence, 
                       fit = fitted_model)) |>
     unnest(res) |>
-    mutate(outcome = case_when(outcome == "directbehavioral" ~ "Direct Behavioral Measure",		
+    mutate(outcome = case_when(outcome == "directbehavioral" ~ "Direct Behavioral",		
                                outcome == "behavioralproxy" ~ "Behavioral Proxy",
                                outcome == "selfreportsaboutbehavior" ~ "Self-Report about Behavior",
-                               outcome == "mixed" ~ "Mixed Self-Report",
-                               outcome == "selfreport" ~ "Self-Report about Subjective Experience",
-                               outcome == "neurophys" ~ "Neurophysiological",
+                               outcome == "selfreportaboutsubjectivestate" ~ "Self-Report about Subjective States",
+                               outcome == "neurobiopsychophys" ~ "Neuro/Bio/Psychophys",
                                outcome == "cognitiveability" ~ "Cognitive Ability"),
            outcome = fct_relevel(outcome, 
-                                 "Direct Behavioral Measure",		
+                                 "Direct Behavioral",		
                                  "Behavioral Proxy",
                                  "Self-Report about Behavior",
-                                 "Mixed Self-Report",
-                                 "Self-Report about Subjective Experience",
-                                 "Neurophysiological",
+                                 "Self-Report about Subjective States",
+                                 "Neuro/Bio/Psychophys",
                                  "Cognitive Ability"))
   
   #write_rds(posterior_prevalence_field_year, "models/posterior_prevalence_field_year.rds")
@@ -1088,7 +1041,7 @@ p_prevalence_and_trend_field_marginal <- ggplot() +
   scale_x_continuous(breaks = c(2010, 2012, 2014, 2016, 2018, 2020, 2022)) +
   coord_cartesian(ylim = c(0,1)) +
   scale_y_continuous(labels = scales::label_percent()) + # , breaks = c(0, 0.05, 0.1, 0.25, 0.5, 1)
-  ylab("Prevalence") +
+  ylab("Prevalence\n(Marginal Global Mean)") +
   xlab("Year") +
   facet_wrap( ~ outcome, ncol = 2)
 
@@ -1106,7 +1059,7 @@ p_prevalence_and_trend_field_conditional <- ggplot() +
   scale_x_continuous(breaks = c(2010, 2012, 2014, 2016, 2018, 2020, 2022)) +
   coord_cartesian(ylim = c(0,1)) +
   scale_y_continuous(labels = scales::label_percent()) + # , breaks = c(0, 0.05, 0.1, 0.25, 0.5, 1)
-  ylab("Prevalence") +
+  ylab("Prevalence\n(Conditional Global Mean)") +
   xlab("Year") +
   facet_wrap( ~ outcome, ncol = 2)
 
@@ -1125,28 +1078,25 @@ data_summary_subfields <- data_centered |>
   pivot_longer(cols = c("directbehavioral", 
                         "behavioralproxy",
                         "selfreportsaboutbehavior",
-                        "mixed",
-                        "selfreport",
-                        "neurophys",
+                        "selfreportaboutsubjectivestate",
+                        "neurobiopsychophys",
                         "cognitiveability"),
                names_to = "outcome",
                values_to = "used") |>
   group_by(subfield, year, outcome) |>
   summarize(proportion = mean(used)) |>
-  mutate(outcome = case_when(outcome == "directbehavioral" ~ "Direct Behavioral Measure",		
+  mutate(outcome = case_when(outcome == "directbehavioral" ~ "Direct Behavioral",		
                              outcome == "behavioralproxy" ~ "Behavioral Proxy",
                              outcome == "selfreportsaboutbehavior" ~ "Self-Report about Behavior",
-                             outcome == "mixed" ~ "Mixed Self-Report",
-                             outcome == "selfreport" ~ "Self-Report about\nSubjective Experience",
-                             outcome == "neurophys" ~ "Neurophysiological",
+                             outcome == "selfreportaboutsubjectivestate" ~ "Self-Report about\nSubjective Experience",
+                             outcome == "neurobiopsychophys" ~ "Neuro/Bio/Psychophys",
                              outcome == "cognitiveability" ~ "Cognitive Ability"),
          outcome = fct_relevel(outcome, 
-                               "Direct Behavioral Measure",		
+                               "Direct Behavioral",		
                                "Behavioral Proxy",
                                "Self-Report about Behavior",
-                               "Mixed Self-Report",
                                "Self-Report about\nSubjective Experience",
-                               "Neurophysiological",
+                               "Neuro/Bio/Psychophys",
                                "Cognitive Ability"))
 
 if(exists("models/posterior_prevalence_subfields_conditional_by_year.rds")){
@@ -1166,20 +1116,18 @@ if(exists("models/posterior_prevalence_subfields_conditional_by_year.rds")){
                       est_prevalence, 
                       fit = fitted_model)) |>
     unnest(res)  |>
-    mutate(outcome = case_when(outcome == "directbehavioral" ~ "Direct Behavioral Measure",		
+    mutate(outcome = case_when(outcome == "directbehavioral" ~ "Direct Behavioral",		
                                outcome == "behavioralproxy" ~ "Behavioral Proxy",
                                outcome == "selfreportsaboutbehavior" ~ "Self-Report about Behavior",
-                               outcome == "mixed" ~ "Mixed Self-Report",
-                               outcome == "selfreport" ~ "Self-Report about/nSubjective Experience",
-                               outcome == "neurophys" ~ "Neurophysiological",
+                               outcome == "selfreportaboutsubjectivestate" ~ "Self-Report about/nSubjective Experience",
+                               outcome == "neurobiopsychophys" ~ "Neuro/Bio/Psychophys",
                                outcome == "cognitiveability" ~ "Cognitive Ability"),
            outcome = fct_relevel(outcome, 
-                                 "Direct Behavioral Measure",		
+                                 "Direct Behavioral",		
                                  "Behavioral Proxy",
                                  "Self-Report about Behavior",
-                                 "Mixed Self-Report",
                                  "Self-Report about\nSubjective Experience",
-                                 "Neurophysiological",
+                                 "Neuro/Bio/Psychophys",
                                  "Cognitive Ability"))
   
   write_rds(posterior_prevalence_subfields_conditional_by_year, 
@@ -1264,19 +1212,17 @@ var_cors_journal_intercept |>
 # plot
 p_cors_journal_intercept <- var_cors_journal_intercept |>
   rename(outcome = var,
-         "Direct Behavioral Measure" = directbehavioral, 
+         "Direct Behavioral" = directbehavioral, 
          "Behavioral Proxy" = behavioralproxy, 
          "Self-Report about Behavior" = selfreportsaboutbehavior, 
-         "Mixed Self-Report" = mixed, 
-         "Self-Report about Subjective Experience" = selfreport, 
-         "Neurophysiological" = neurophys, 
+         "Self-Report about Subjective States" = selfreport, 
+         "Neuro/Bio/Psychophys" = neurobiopsychophys, 
          "Cognitive Ability" = cognitiveability) |>
-  mutate(outcome = case_when(outcome == "directbehavioral" ~ "Direct Behavioral Measure",		
+  mutate(outcome = case_when(outcome == "directbehavioral" ~ "Direct Behavioral",		
                              outcome == "behavioralproxy" ~ "Behavioral Proxy",
                              outcome == "selfreportsaboutbehavior" ~ "Self-Report about Behavior",
-                             outcome == "mixed" ~ "Mixed Self-Report",
-                             outcome == "selfreport" ~ "Self-Report about Subjective Experience",
-                             outcome == "neurophys" ~ "Neurophysiological",
+                             outcome == "selfreportaboutsubjectivestate" ~ "Self-Report about Subjective States",
+                             outcome == "neurobiopsychophys" ~ "Neuro/Bio/Psychophys",
                              outcome == "cognitiveability" ~ "Cognitive Ability")) |>
   column_to_rownames("outcome") |>
   ggcorrplot(method = "circle",
@@ -1317,19 +1263,17 @@ var_cors_journal_slope |>
 # plot
 p_cors_journal_slope <- var_cors_journal_slope |> 
   rename(outcome = var,
-         "Direct Behavioral Measure" = directbehavioral, 
+         "Direct Behavioral" = directbehavioral, 
          "Behavioral Proxy" = behavioralproxy, 
          "Self-Report about Behavior" = selfreportsaboutbehavior, 
-         "Mixed Self-Report" = mixed, 
-         "Self-Report about Subjective Experience" = selfreport, 
-         "Neurophysiological" = neurophys, 
+         "Self-Report about Subjective States" = selfreport, 
+         "Neuro/Bio/Psychophys" = neurobiopsychophys, 
          "Cognitive Ability" = cognitiveability) |>
-  mutate(outcome = case_when(outcome == "directbehavioral" ~ "Direct Behavioral Measure",		
+  mutate(outcome = case_when(outcome == "directbehavioral" ~ "Direct Behavioral",		
                              outcome == "behavioralproxy" ~ "Behavioral Proxy",
                              outcome == "selfreportsaboutbehavior" ~ "Self-Report about Behavior",
-                             outcome == "mixed" ~ "Mixed Self-Report",
-                             outcome == "selfreport" ~ "Self-Report about Subjective Experience",
-                             outcome == "neurophys" ~ "Neurophysiological",
+                             outcome == "selfreportaboutsubjectivestate" ~ "Self-Report about Subjective States",
+                             outcome == "neurobiopsychophys" ~ "Neuro/Bio/Psychophys",
                              outcome == "cognitiveability" ~ "Cognitive Ability")) |>
   column_to_rownames("outcome") |>
   ggcorrplot(method = "circle",
