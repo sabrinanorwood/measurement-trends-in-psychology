@@ -14,11 +14,8 @@ output:
 
 # TODO
 
-- update prior in this file and the other to match prior justification
-- prevalence-and-trend plot might need to choose between marginal and conditional means. perhaps component plots too.
-- try to reproduce "\n" warning/error in prevalence-and-trend plots and fix
-- Add an (alternative) weighted model that weights by total articles published in each journal during that year? This should only produce results for the field as a whole, eg "Psychology (weighted by publications per journal per year)"
-- remove/refactor plotting of summary data in plots, as the real data will be planned-missing
+- add the shaded regions to the journal prevalence plot 
+- remove/refactor plotting of summary data in plots? the real data will be planned-missing
 
 ```{r setup, include=FALSE}
 
@@ -444,16 +441,16 @@ fitted_model <- brm(
 
 ```{r eval=FALSE, include=FALSE}
 
-summary(fitted_model)
-
-pp_check(fitted_model, ndraws = 100, resp = "directbehavioral")
-pp_check(fitted_model, ndraws = 100, resp = "behavioralproxy")
-pp_check(fitted_model, ndraws = 100, resp = "selfreportsaboutbehavior")
-pp_check(fitted_model, ndraws = 100, resp = "selfreportaboutsubjectivestate")
-pp_check(fitted_model, ndraws = 100, resp = "neurobiopsychophys")
-pp_check(fitted_model, ndraws = 100, resp = "cognitiveability")
-
-plot(fitted_model, comparisons = TRUE, ask = FALSE)
+# summary(fitted_model)
+# 
+# pp_check(fitted_model, ndraws = 100, resp = "directbehavioral")
+# pp_check(fitted_model, ndraws = 100, resp = "behavioralproxy")
+# pp_check(fitted_model, ndraws = 100, resp = "selfreportsaboutbehavior")
+# pp_check(fitted_model, ndraws = 100, resp = "selfreportaboutsubjectivestate")
+# pp_check(fitted_model, ndraws = 100, resp = "neurobiopsychophys")
+# pp_check(fitted_model, ndraws = 100, resp = "cognitiveability")
+# 
+# plot(fitted_model, comparisons = TRUE, ask = FALSE)
 
 ```
 
