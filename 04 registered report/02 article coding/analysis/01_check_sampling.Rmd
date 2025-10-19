@@ -1,0 +1,80 @@
+---
+title: "Check stratified random sampling of records by journal and year"
+author: "Ian Hussey"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: hide
+    highlight: haddock
+    theme: flatly
+    toc: yes
+    toc_float: yes
+    self_contained: true
+    code_download: true
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = TRUE, include = TRUE, warning = FALSE, message = FALSE)
+```
+
+# Dependencies
+
+```{r}
+
+library(tidyverse)
+library(janitor)
+library(readxl)
+library(knitr)
+library(kableExtra)
+
+options(scipen=999)
+
+```
+
+# Load and clean data
+
+```{r fig.height=25, fig.width=10}
+
+sampling_counts <- read_csv("../../01 systematic search/data/04 processed/data_sampling_counts.csv") |>
+  select(journal,
+         goal_min_year = min_year,
+         goal_max_year = max_year,
+         n_goal_extractions = years)
+
+extracted_counts <- read_excel("../data/02 extractions for validation of the codebook/codebook.xlsx") |>
+  clean_names() |>
+  group_by(journal) |>
+  summarize(n_completed_extractions = n(),
+            extracted_min_year = min(year),
+            extracted_max_year = max(year))
+
+counts <- 
+  full_join(sampling_counts, 
+            extracted_counts, 
+            by = join_by("journal")) |>
+  select(journal, 
+         goal_min_year,
+         extracted_min_year, 
+         goal_max_year, 
+         extracted_max_year,
+         n_goal_extractions, 
+         n_completed_extractions) |>
+  mutate(match = 
+           (goal_min_year == extracted_min_year) & 
+           (goal_max_year == extracted_max_year) & 
+           (n_goal_extractions == n_completed_extractions))
+
+counts |>
+  kable() |>
+  kable_classic(full_width = FALSE)
+
+```
+
+# Session info
+
+```{r}
+
+sessionInfo()
+
+```
+

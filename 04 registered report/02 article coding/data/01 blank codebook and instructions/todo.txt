@@ -1,0 +1,4 @@
+Add authors to codebook instructions
+
+
+Add description of sampling one article per journal per year, and using script to check that's what you've sampled. 

@@ -1,0 +1,174 @@
+---
+title: "Stratified random sampling of records by journal and year"
+author: "Ian Hussey"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: hide
+    highlight: haddock
+    theme: flatly
+    toc: yes
+    toc_float: yes
+    self_contained: true
+    code_download: true
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = TRUE, include = TRUE, warning = FALSE, message = FALSE)
+```
+
+# Dependencies
+
+```{r}
+
+library(tidyverse)
+library(janitor)
+
+options(scipen=999)
+
+```
+
+# Load and clean data
+
+```{r fig.height=25, fig.width=10}
+
+data_processed <- read_rds("../data/04 processed/data_processed.rds") |>
+  distinct(DOI, .keep_all = TRUE) |>
+  #filter(more_than_30_citations_per_year) |>
+  # exclude titles including the string "review" unless it also contains the string "meta" in order to exclude systematic reviews without meta-analyses
+  filter(!str_detect(title, regex("review", ignore_case = TRUE)) | 
+           str_detect(title, regex("meta", ignore_case = TRUE))) |>
+  # tidy up titles
+  mutate(title = str_replace(title, "<scp>\\s*COVID\\s*</scp>", "COVID"),
+         title = str_replace_all(title, "\\s+", " "),
+         title = str_remove_all(title, "<[^>]+>"),
+         journal = str_remove_all(journal, "\n"),
+         journal = case_when(journal == "PLOS ONE" ~ "PLoS ONE",
+                             journal == "PLoS One" ~ "PLoS ONE",
+                             journal == "Memory &amp; Cognition" ~ "Memory and Cognition",
+                             journal == "Journal of Clinical Child &amp; Adolescent Psychology" ~ "Journal of Clinical Child and Adolescent Psychology",
+                             journal == "Journal of Experimental Psychology: Human Perception and                    Performance" ~ "Journal of Experimental Psychology: Human Perception and Performance",
+                             journal == "Journal of Experimental Psychology: Learning, Memory, and                    Cognition" ~ "Journal of Experimental Psychology: Learning, Memory, and Cognition",
+                             TRUE ~ journal))
+
+res_sampling <- data_processed |>
+  group_by(journal) |>
+  summarize(n = n(),
+            min_year = min(year),
+            max_year = max(year),
+            years = max_year-min_year + 1) |>
+  arrange(desc(n)) |>
+  mutate(percent_sampled = round_half_up(years/n*100, digits = 3))
+
+res_sampling
+
+write_csv(res_sampling, "../data/04 processed/data_sampling_counts.csv")
+
+data_processed |>
+  filter(journal == "PLoS ONE") |>
+  summarize(n_likely_psych = n()/50,
+            min_year = min(year),
+            max_year = max(year),
+            years = max_year-min_year + 1) |>
+  arrange(desc(n_likely_psych)) |>
+  mutate(percent_likely_psych_sampled = round_half_up(years/n_likely_psych*100, digits = 3))
+
+data_processed |>
+  count(journal, year) |>
+  group_by(journal) |>
+  ggplot(aes(year, n)) +
+  geom_vline(xintercept = 2024.5, linetype = "dashed", color = "darkred") +
+  geom_point() +
+  geom_line() +
+  facet_wrap(~ journal, scales = "free_y", ncol = 3)
+
+```
+
+# Sample
+
+## Training
+
+### PLoS ONE
+
+```{r}
+
+set.seed(42)
+
+data_processed_subset_training_plosone <- data_processed |>
+  filter(journal == "PLoS ONE") |>
+  slice_sample(n = 50)
+
+write_csv(data_processed_subset_training_plosone,
+          "../data/04 processed/data_processed_subset_training_plosone.csv")
+
+```
+
+### Sampling
+
+```{r}
+
+data_processed_subset_training_plosone <- 
+  read_csv("../data/04 processed/data_processed_subset_training_plosone_coded.csv") |>
+  filter(psych_study_on_human_participants)
+
+set.seed(42)
+
+data_processed_subset_training <- data_processed |>
+  filter(journal != "PLoS ONE") |>
+  group_by(journal) |>
+  slice_sample(n = 10) |>
+  bind_rows(data_processed_subset_training_plosone)
+
+write_csv(data_processed_subset_training,
+          "../data/04 processed/data_processed_subset_training.csv")
+
+```
+
+## Testing
+
+```{r}
+
+data_processed_subset_training <- read_csv("../data/04 processed/data_processed_subset_training.csv")
+
+data_processed_without_training <- data_processed |>
+  anti_join(data_processed_subset_training, by = join_by("DOI"))
+
+set.seed(42)
+
+data_processed_subset_testing_plosone <- data_processed_without_training |>
+  filter(journal == "PLoS ONE") |>
+  group_by(year) |>
+  slice_sample(n = 150)
+
+write_csv(data_processed_subset_testing_plosone,
+          "../data/04 processed/data_processed_subset_testing_plosone.csv")
+
+```
+
+```{r}
+
+data_processed_subset_testing_plosone <- 
+  read_csv("../data/04 processed/data_processed_subset_testing_plosone_coded.csv") |>
+  filter(psych_study_on_human_participants)
+
+set.seed(42)
+
+data_processed_subset_testing <- data_processed_without_training |>
+  filter(journal != "PLoS ONE") |>
+  group_by(journal, year) |>
+  slice_sample(n = 10) 
+  #bind_rows(data_processed_subset_testing_plosone)
+
+write_csv(data_processed_subset_testing,
+          "../data/04 processed/data_processed_subset_testing.csv")
+
+```
+
+# Session info
+
+```{r}
+
+sessionInfo()
+
+```
+

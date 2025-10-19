@@ -1,0 +1,43 @@
+---
+title: "Inter-rater reliability"
+author: "Ian Hussey"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: hide
+    highlight: haddock
+    theme: flatly
+    toc: yes
+    toc_float: yes
+    self_contained: true
+    code_download: true
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = TRUE, include = TRUE, warning = FALSE, message = FALSE)
+```
+
+# Dependencies
+
+```{r}
+
+library(tidyverse)
+library(janitor)
+library(readxl)
+library(knitr)
+library(kableExtra)
+
+options(scipen=999)
+
+```
+
+TODO
+
+# Session info
+
+```{r}
+
+sessionInfo()
+
+```
+

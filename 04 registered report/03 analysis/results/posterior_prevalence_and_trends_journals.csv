@@ -1,0 +1,181 @@
+label,outcome,prevalence_estimate,prevalence_interval,prevalence_category,trend_estimate,trend_interval,trend_category
+Collabra,Direct Behavioral,0.04,"0.01, 0.11",Rare,0.00,"-0.01, 0.02",No trend detected
+Collabra,Behavioral Proxy,0.08,"0.03, 0.17",Uncommon,-0.01,"-0.02, 0.00",No trend detected
+Collabra,Self-Report about Behavior,0.06,"0.02, 0.13",Uncommon,0.01,"-0.00, 0.02",No trend detected
+Collabra,Self-Report about Subjective States,0.99,"0.96, 1.00",Frequent,0.00,"-0.00, 0.00",No trend detected
+Collabra,Neuro/Bio/Psychophys,0.28,"0.18, 0.40",Common,0.02,"-0.00, 0.05",No trend detected
+Collabra,Cognitive Ability,0.06,"0.02, 0.12",Uncommon,0.00,"-0.01, 0.02",No trend detected
+JEP:G,Direct Behavioral,0.01,"0.00, 0.03",Rare,0.00,"-0.00, 0.01",No trend detected
+JEP:G,Behavioral Proxy,0.10,"0.04, 0.19",Uncommon,-0.01,"-0.02, 0.01",No trend detected
+JEP:G,Self-Report about Behavior,0.08,"0.03, 0.18",Uncommon,-0.04,"-0.06, -0.02",Decreasing
+JEP:G,Self-Report about Subjective States,0.99,"0.96, 1.00",Frequent,0.00,"-0.00, 0.00",No trend detected
+JEP:G,Neuro/Bio/Psychophys,0.19,"0.11, 0.30",Occasional,0.00,"-0.02, 0.03",No trend detected
+JEP:G,Cognitive Ability,0.05,"0.02, 0.11",Rare,-0.00,"-0.01, 0.01",No trend detected
+NHB,Direct Behavioral,0.00,"0.00, 0.02",Rare,-0.00,"-0.01, -0.00",Decreasing
+NHB,Behavioral Proxy,0.04,"0.01, 0.10",Rare,-0.01,"-0.02, -0.00",Decreasing
+NHB,Self-Report about Behavior,0.01,"0.00, 0.04",Rare,0.00,"-0.00, 0.01",No trend detected
+NHB,Self-Report about Subjective States,0.88,"0.81, 0.94",Frequent,-0.00,"-0.03, 0.01",No trend detected
+NHB,Neuro/Bio/Psychophys,0.13,"0.07, 0.21",Occasional,0.02,"0.00, 0.04",Increasing
+NHB,Cognitive Ability,0.02,"0.00, 0.07",Rare,-0.01,"-0.02, -0.00",Decreasing
+PLOSONE,Direct Behavioral,0.00,"0.00, 0.02",Rare,0.00,"-0.00, 0.00",No trend detected
+PLOSONE,Behavioral Proxy,0.01,"0.00, 0.05",Rare,-0.00,"-0.00, 0.00",No trend detected
+PLOSONE,Self-Report about Behavior,0.02,"0.00, 0.07",Rare,-0.01,"-0.02, -0.00",Decreasing
+PLOSONE,Self-Report about Subjective States,0.96,"0.90, 0.99",Frequent,0.00,"-0.00, 0.01",No trend detected
+PLOSONE,Neuro/Bio/Psychophys,0.19,"0.11, 0.29",Occasional,0.03,"0.00, 0.05",Increasing
+PLOSONE,Cognitive Ability,0.10,"0.04, 0.19",Occasional,0.03,"0.01, 0.05",Increasing
+PS,Direct Behavioral,0.01,"0.00, 0.04",Rare,0.00,"0.00, 0.01",Increasing
+PS,Behavioral Proxy,0.05,"0.02, 0.11",Uncommon,-0.01,"-0.02, 0.00",No trend detected
+PS,Self-Report about Behavior,0.04,"0.01, 0.09",Rare,-0.01,"-0.02, -0.00",Decreasing
+PS,Self-Report about Subjective States,0.99,"0.96, 1.00",Frequent,0.00,"-0.00, 0.00",No trend detected
+PS,Neuro/Bio/Psychophys,0.07,"0.03, 0.13",Uncommon,-0.00,"-0.01, 0.01",No trend detected
+PS,Cognitive Ability,0.01,"0.00, 0.04",Rare,0.00,"-0.00, 0.01",No trend detected
+BRAT,Direct Behavioral,0.04,"0.01, 0.10",Rare,-0.00,"-0.01, 0.01",No trend detected
+BRAT,Behavioral Proxy,0.29,"0.19, 0.40",Common,0.04,"0.01, 0.06",Increasing
+BRAT,Self-Report about Behavior,0.11,"0.06, 0.19",Occasional,0.00,"-0.01, 0.02",No trend detected
+BRAT,Self-Report about Subjective States,0.95,"0.89, 0.98",Frequent,0.00,"-0.00, 0.01",No trend detected
+BRAT,Neuro/Bio/Psychophys,0.16,"0.09, 0.25",Occasional,0.02,"0.00, 0.04",Increasing
+BRAT,Cognitive Ability,0.01,"0.00, 0.04",Rare,0.00,"-0.00, 0.01",No trend detected
+CPS,Direct Behavioral,0.01,"0.00, 0.03",Rare,-0.00,"-0.00, 0.00",No trend detected
+CPS,Behavioral Proxy,0.05,"0.02, 0.11",Rare,0.00,"-0.00, 0.01",No trend detected
+CPS,Self-Report about Behavior,0.05,"0.01, 0.11",Rare,0.01,"0.00, 0.02",Increasing
+CPS,Self-Report about Subjective States,0.98,"0.94, 1.00",Frequent,0.00,"-0.00, 0.00",No trend detected
+CPS,Neuro/Bio/Psychophys,0.17,"0.09, 0.26",Occasional,0.01,"0.00, 0.03",Increasing
+CPS,Cognitive Ability,0.11,"0.05, 0.19",Occasional,0.00,"-0.01, 0.01",No trend detected
+JCCAP,Direct Behavioral,0.01,"0.00, 0.05",Rare,0.01,"0.00, 0.02",Increasing
+JCCAP,Behavioral Proxy,0.04,"0.01, 0.11",Rare,0.01,"0.00, 0.02",Increasing
+JCCAP,Self-Report about Behavior,0.06,"0.03, 0.13",Uncommon,0.00,"-0.01, 0.01",No trend detected
+JCCAP,Self-Report about Subjective States,0.98,"0.94, 1.00",Frequent,0.00,"-0.00, 0.01",No trend detected
+JCCAP,Neuro/Bio/Psychophys,0.04,"0.01, 0.10",Rare,0.01,"0.00, 0.01",Increasing
+JCCAP,Cognitive Ability,0.03,"0.00, 0.08",Rare,0.01,"0.00, 0.01",Increasing
+JCCP,Direct Behavioral,0.00,"0.00, 0.02",Rare,-0.00,"-0.00, 0.00",No trend detected
+JCCP,Behavioral Proxy,0.04,"0.01, 0.10",Rare,0.01,"0.00, 0.02",Increasing
+JCCP,Self-Report about Behavior,0.02,"0.00, 0.06",Rare,0.00,"-0.01, 0.01",No trend detected
+JCCP,Self-Report about Subjective States,0.78,"0.66, 0.87",Frequent,0.00,"-0.02, 0.02",No trend detected
+JCCP,Neuro/Bio/Psychophys,0.05,"0.01, 0.12",Uncommon,0.01,"0.00, 0.02",Increasing
+JCCP,Cognitive Ability,0.04,"0.01, 0.11",Rare,0.01,"-0.00, 0.02",No trend detected
+JPCS,Direct Behavioral,0.01,"0.00, 0.03",Rare,-0.00,"-0.00, 0.00",No trend detected
+JPCS,Behavioral Proxy,0.02,"0.00, 0.07",Rare,0.01,"0.00, 0.02",Increasing
+JPCS,Self-Report about Behavior,0.09,"0.04, 0.18",Uncommon,0.00,"-0.01, 0.02",No trend detected
+JPCS,Self-Report about Subjective States,0.94,"0.87, 0.98",Frequent,0.00,"-0.01, 0.01",No trend detected
+JPCS,Neuro/Bio/Psychophys,0.06,"0.02, 0.13",Uncommon,-0.01,"-0.03, -0.00",Decreasing
+JPCS,Cognitive Ability,0.09,"0.03, 0.17",Uncommon,0.01,"-0.00, 0.02",No trend detected
+Cognition,Direct Behavioral,0.01,"0.00, 0.06",Rare,0.01,"0.00, 0.02",Increasing
+Cognition,Behavioral Proxy,0.04,"0.01, 0.12",Rare,0.01,"0.00, 0.03",Increasing
+Cognition,Self-Report about Behavior,0.11,"0.05, 0.20",Occasional,-0.00,"-0.02, 0.02",No trend detected
+Cognition,Self-Report about Subjective States,0.94,"0.87, 0.98",Frequent,-0.00,"-0.01, 0.01",No trend detected
+Cognition,Neuro/Bio/Psychophys,0.02,"0.00, 0.06",Rare,0.00,"-0.01, 0.01",No trend detected
+Cognition,Cognitive Ability,0.04,"0.01, 0.10",Rare,0.01,"0.00, 0.03",Increasing
+JEP:HPP,Direct Behavioral,0.02,"0.00, 0.11",Rare,-0.01,"-0.03, -0.00",Decreasing
+JEP:HPP,Behavioral Proxy,0.02,"0.00, 0.09",Rare,0.00,"-0.00, 0.01",No trend detected
+JEP:HPP,Self-Report about Behavior,0.10,"0.04, 0.21",Occasional,-0.00,"-0.03, 0.02",No trend detected
+JEP:HPP,Self-Report about Subjective States,0.89,"0.77, 0.96",Frequent,-0.00,"-0.02, 0.01",No trend detected
+JEP:HPP,Neuro/Bio/Psychophys,0.05,"0.01, 0.15",Uncommon,-0.01,"-0.03, 0.00",No trend detected
+JEP:HPP,Cognitive Ability,0.05,"0.01, 0.14",Uncommon,-0.00,"-0.02, 0.01",No trend detected
+JEP:LMC,Direct Behavioral,0.02,"0.00, 0.07",Rare,-0.01,"-0.02, -0.00",Decreasing
+JEP:LMC,Behavioral Proxy,0.11,"0.04, 0.20",Occasional,0.01,"-0.01, 0.02",No trend detected
+JEP:LMC,Self-Report about Behavior,0.06,"0.02, 0.13",Uncommon,0.01,"-0.00, 0.02",No trend detected
+JEP:LMC,Self-Report about Subjective States,0.93,"0.84, 0.97",Frequent,-0.01,"-0.02, 0.00",No trend detected
+JEP:LMC,Neuro/Bio/Psychophys,0.06,"0.02, 0.14",Uncommon,0.01,"-0.01, 0.02",No trend detected
+JEP:LMC,Cognitive Ability,0.02,"0.00, 0.06",Rare,-0.00,"-0.01, 0.01",No trend detected
+JML,Direct Behavioral,0.01,"0.00, 0.04",Rare,-0.00,"-0.01, 0.01",No trend detected
+JML,Behavioral Proxy,0.05,"0.01, 0.15",Uncommon,-0.00,"-0.02, 0.01",No trend detected
+JML,Self-Report about Behavior,0.10,"0.03, 0.21",Uncommon,0.01,"-0.02, 0.03",No trend detected
+JML,Self-Report about Subjective States,0.94,"0.84, 0.99",Frequent,0.00,"-0.01, 0.02",No trend detected
+JML,Neuro/Bio/Psychophys,0.10,"0.03, 0.25",Occasional,0.01,"-0.01, 0.04",No trend detected
+JML,Cognitive Ability,0.08,"0.02, 0.20",Uncommon,0.01,"-0.01, 0.03",No trend detected
+M&C,Direct Behavioral,0.01,"0.00, 0.03",Rare,-0.00,"-0.01, 0.00",No trend detected
+M&C,Behavioral Proxy,0.12,"0.05, 0.22",Occasional,-0.00,"-0.04, 0.02",No trend detected
+M&C,Self-Report about Behavior,0.11,"0.05, 0.21",Occasional,-0.01,"-0.05, 0.01",No trend detected
+M&C,Self-Report about Subjective States,0.94,"0.86, 0.98",Frequent,0.00,"-0.01, 0.01",No trend detected
+M&C,Neuro/Bio/Psychophys,0.23,"0.13, 0.36",Occasional,0.00,"-0.04, 0.04",No trend detected
+M&C,Cognitive Ability,0.05,"0.02, 0.12",Rare,0.00,"-0.01, 0.02",No trend detected
+CD,Direct Behavioral,0.02,"0.00, 0.08",Rare,0.01,"0.00, 0.02",Increasing
+CD,Behavioral Proxy,0.06,"0.02, 0.15",Uncommon,-0.00,"-0.02, 0.01",No trend detected
+CD,Self-Report about Behavior,0.14,"0.07, 0.25",Occasional,0.01,"-0.01, 0.03",No trend detected
+CD,Self-Report about Subjective States,0.82,"0.69, 0.91",Frequent,0.02,"0.00, 0.04",Increasing
+CD,Neuro/Bio/Psychophys,0.05,"0.01, 0.13",Uncommon,0.01,"-0.01, 0.02",No trend detected
+CD,Cognitive Ability,0.04,"0.01, 0.11",Rare,0.00,"-0.01, 0.01",No trend detected
+DP,Direct Behavioral,0.02,"0.00, 0.09",Rare,-0.01,"-0.02, 0.00",No trend detected
+DP,Behavioral Proxy,0.10,"0.04, 0.22",Occasional,-0.01,"-0.03, 0.01",No trend detected
+DP,Self-Report about Behavior,0.13,"0.05, 0.26",Occasional,-0.03,"-0.05, -0.00",Decreasing
+DP,Self-Report about Subjective States,0.81,"0.67, 0.91",Frequent,0.02,"0.00, 0.05",Increasing
+DP,Neuro/Bio/Psychophys,0.12,"0.04, 0.24",Occasional,-0.01,"-0.03, 0.01",No trend detected
+DP,Cognitive Ability,0.02,"0.00, 0.07",Rare,-0.00,"-0.01, 0.01",No trend detected
+JECP,Direct Behavioral,0.04,"0.01, 0.11",Rare,-0.00,"-0.01, 0.01",No trend detected
+JECP,Behavioral Proxy,0.02,"0.00, 0.07",Rare,0.00,"-0.01, 0.01",No trend detected
+JECP,Self-Report about Behavior,0.14,"0.07, 0.25",Occasional,0.02,"0.00, 0.04",Increasing
+JECP,Self-Report about Subjective States,0.77,"0.64, 0.86",Frequent,0.02,"-0.00, 0.04",No trend detected
+JECP,Neuro/Bio/Psychophys,0.02,"0.00, 0.06",Rare,-0.00,"-0.01, 0.01",No trend detected
+JECP,Cognitive Ability,0.04,"0.01, 0.11",Rare,-0.01,"-0.02, -0.00",Decreasing
+JRA,Direct Behavioral,0.01,"0.00, 0.05",Rare,-0.00,"-0.01, 0.01",No trend detected
+JRA,Behavioral Proxy,0.14,"0.05, 0.31",Occasional,-0.00,"-0.03, 0.02",No trend detected
+JRA,Self-Report about Behavior,0.13,"0.04, 0.29",Occasional,-0.04,"-0.09, -0.01",Decreasing
+JRA,Self-Report about Subjective States,0.81,"0.62, 0.92",Frequent,0.03,"0.00, 0.07",Increasing
+JRA,Neuro/Bio/Psychophys,0.16,"0.06, 0.33",Occasional,-0.01,"-0.05, 0.01",No trend detected
+JRA,Cognitive Ability,0.07,"0.02, 0.19",Uncommon,0.00,"-0.01, 0.02",No trend detected
+PA,Direct Behavioral,0.02,"0.00, 0.08",Rare,0.01,"-0.00, 0.02",No trend detected
+PA,Behavioral Proxy,0.14,"0.06, 0.27",Occasional,0.01,"-0.01, 0.03",No trend detected
+PA,Self-Report about Behavior,0.05,"0.01, 0.13",Uncommon,-0.00,"-0.02, 0.01",No trend detected
+PA,Self-Report about Subjective States,0.69,"0.54, 0.82",Frequent,0.01,"-0.03, 0.03",No trend detected
+PA,Neuro/Bio/Psychophys,0.05,"0.01, 0.13",Rare,-0.01,"-0.02, 0.00",No trend detected
+PA,Cognitive Ability,0.03,"0.01, 0.11",Rare,0.00,"-0.00, 0.02",No trend detected
+JAP,Direct Behavioral,0.00,"0.00, 0.03",Rare,-0.00,"-0.00, 0.00",No trend detected
+JAP,Behavioral Proxy,0.01,"0.00, 0.06",Rare,0.00,"-0.00, 0.01",No trend detected
+JAP,Self-Report about Behavior,0.02,"0.00, 0.08",Rare,0.00,"-0.01, 0.01",No trend detected
+JAP,Self-Report about Subjective States,0.80,"0.66, 0.91",Frequent,0.01,"-0.01, 0.03",No trend detected
+JAP,Neuro/Bio/Psychophys,0.06,"0.01, 0.17",Uncommon,0.01,"-0.00, 0.03",No trend detected
+JAP,Cognitive Ability,0.13,"0.05, 0.27",Occasional,-0.01,"-0.03, 0.01",No trend detected
+JEP:A,Direct Behavioral,0.01,"0.00, 0.04",Rare,-0.00,"-0.01, 0.00",No trend detected
+JEP:A,Behavioral Proxy,0.02,"0.00, 0.07",Rare,0.00,"-0.01, 0.01",No trend detected
+JEP:A,Self-Report about Behavior,0.04,"0.01, 0.11",Rare,0.01,"-0.00, 0.02",No trend detected
+JEP:A,Self-Report about Subjective States,0.75,"0.59, 0.88",Frequent,0.00,"-0.03, 0.03",No trend detected
+JEP:A,Neuro/Bio/Psychophys,0.15,"0.06, 0.29",Occasional,-0.01,"-0.04, 0.02",No trend detected
+JEP:A,Cognitive Ability,0.10,"0.04, 0.23",Occasional,-0.01,"-0.04, 0.02",No trend detected
+JOB,Direct Behavioral,0.01,"0.00, 0.03",Rare,-0.00,"-0.00, 0.00",No trend detected
+JOB,Behavioral Proxy,0.11,"0.04, 0.21",Occasional,0.01,"-0.01, 0.03",No trend detected
+JOB,Self-Report about Behavior,0.05,"0.02, 0.12",Rare,-0.00,"-0.01, 0.01",No trend detected
+JOB,Self-Report about Subjective States,0.63,"0.50, 0.76",Frequent,0.01,"-0.01, 0.03",No trend detected
+JOB,Neuro/Bio/Psychophys,0.10,"0.04, 0.20",Occasional,-0.01,"-0.02, 0.01",No trend detected
+JOB,Cognitive Ability,0.02,"0.00, 0.06",Rare,0.00,"-0.01, 0.01",No trend detected
+OBHDP,Direct Behavioral,0.02,"0.00, 0.11",Rare,0.00,"-0.02, 0.02",No trend detected
+OBHDP,Behavioral Proxy,0.10,"0.03, 0.25",Uncommon,-0.00,"-0.04, 0.02",No trend detected
+OBHDP,Self-Report about Behavior,0.06,"0.02, 0.15",Uncommon,0.00,"-0.03, 0.02",No trend detected
+OBHDP,Self-Report about Subjective States,0.85,"0.70, 0.95",Frequent,0.00,"-0.02, 0.02",No trend detected
+OBHDP,Neuro/Bio/Psychophys,0.09,"0.02, 0.22",Uncommon,0.00,"-0.03, 0.02",No trend detected
+OBHDP,Cognitive Ability,0.03,"0.01, 0.11",Rare,0.01,"-0.01, 0.02",No trend detected
+PP,Direct Behavioral,0.01,"0.00, 0.04",Rare,-0.01,"-0.03, -0.00",Decreasing
+PP,Behavioral Proxy,0.02,"0.00, 0.08",Rare,0.00,"-0.01, 0.01",No trend detected
+PP,Self-Report about Behavior,0.02,"0.00, 0.07",Rare,0.00,"-0.01, 0.01",No trend detected
+PP,Self-Report about Subjective States,0.56,"0.39, 0.73",Frequent,-0.00,"-0.04, 0.03",No trend detected
+PP,Neuro/Bio/Psychophys,0.17,"0.07, 0.32",Occasional,-0.01,"-0.05, 0.02",No trend detected
+PP,Cognitive Ability,0.06,"0.02, 0.17",Uncommon,-0.01,"-0.03, 0.01",No trend detected
+Emotion,Direct Behavioral,0.00,"0.00, 0.03",Rare,-0.00,"-0.02, -0.00",Decreasing
+Emotion,Behavioral Proxy,0.02,"0.00, 0.08",Rare,0.01,"0.00, 0.01",Increasing
+Emotion,Self-Report about Behavior,0.06,"0.02, 0.13",Uncommon,0.00,"-0.01, 0.01",No trend detected
+Emotion,Self-Report about Subjective States,0.54,"0.41, 0.66",Frequent,0.01,"-0.01, 0.03",No trend detected
+Emotion,Neuro/Bio/Psychophys,0.02,"0.00, 0.07",Rare,-0.00,"-0.01, 0.01",No trend detected
+Emotion,Cognitive Ability,0.22,"0.12, 0.34",Occasional,-0.03,"-0.06, -0.01",Decreasing
+JESP,Direct Behavioral,0.01,"0.00, 0.04",Rare,-0.00,"-0.01, 0.01",No trend detected
+JESP,Behavioral Proxy,0.02,"0.00, 0.08",Rare,0.00,"-0.00, 0.01",No trend detected
+JESP,Self-Report about Behavior,0.09,"0.03, 0.20",Uncommon,0.01,"-0.01, 0.03",No trend detected
+JESP,Self-Report about Subjective States,0.79,"0.63, 0.91",Frequent,0.01,"-0.01, 0.03",No trend detected
+JESP,Neuro/Bio/Psychophys,0.03,"0.00, 0.10",Rare,0.00,"-0.01, 0.01",No trend detected
+JESP,Cognitive Ability,0.03,"0.00, 0.10",Rare,-0.00,"-0.01, 0.01",No trend detected
+JPSP,Direct Behavioral,0.01,"0.00, 0.05",Rare,0.00,"-0.01, 0.01",No trend detected
+JPSP,Behavioral Proxy,0.21,"0.08, 0.41",Occasional,0.01,"-0.03, 0.05",No trend detected
+JPSP,Self-Report about Behavior,0.16,"0.07, 0.34",Occasional,-0.01,"-0.05, 0.02",No trend detected
+JPSP,Self-Report about Subjective States,0.75,"0.57, 0.89",Frequent,0.02,"-0.00, 0.06",No trend detected
+JPSP,Neuro/Bio/Psychophys,0.08,"0.02, 0.21",Uncommon,0.01,"-0.01, 0.05",No trend detected
+JPSP,Cognitive Ability,0.02,"0.00, 0.08",Rare,0.00,"-0.01, 0.02",No trend detected
+JRP,Direct Behavioral,0.00,"0.00, 0.02",Rare,-0.00,"-0.00, 0.00",No trend detected
+JRP,Behavioral Proxy,0.02,"0.00, 0.06",Rare,0.00,"-0.00, 0.01",No trend detected
+JRP,Self-Report about Behavior,0.06,"0.02, 0.14",Uncommon,-0.02,"-0.03, -0.01",Decreasing
+JRP,Self-Report about Subjective States,0.75,"0.64, 0.85",Frequent,0.00,"-0.02, 0.02",No trend detected
+JRP,Neuro/Bio/Psychophys,0.23,"0.14, 0.35",Occasional,0.00,"-0.02, 0.02",No trend detected
+JRP,Cognitive Ability,0.04,"0.01, 0.11",Rare,0.01,"0.00, 0.02",Increasing
+PSPB,Direct Behavioral,0.02,"0.00, 0.09",Rare,-0.00,"-0.01, 0.00",No trend detected
+PSPB,Behavioral Proxy,0.02,"0.00, 0.07",Rare,0.00,"-0.00, 0.01",No trend detected
+PSPB,Self-Report about Behavior,0.12,"0.05, 0.23",Occasional,0.00,"-0.01, 0.03",No trend detected
+PSPB,Self-Report about Subjective States,0.91,"0.82, 0.97",Frequent,0.00,"-0.01, 0.01",No trend detected
+PSPB,Neuro/Bio/Psychophys,0.16,"0.08, 0.29",Occasional,-0.00,"-0.02, 0.02",No trend detected
+PSPB,Cognitive Ability,0.11,"0.04, 0.21",Occasional,-0.00,"-0.02, 0.02",No trend detected

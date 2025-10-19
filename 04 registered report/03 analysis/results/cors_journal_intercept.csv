@@ -1,0 +1,7 @@
+outcome,Direct Behavioral,Behavioral Proxy,Self-Report about Behavior,Self-Report about Subjective States,Neuro/Bio/Psychophys,Cognitive Ability
+Direct Behavioral,1.00,0.16,0.29,0.21,-0.02,-0.14
+Behavioral Proxy,0.16,1.00,0.19,0.05,0.15,-0.31
+Self-Report about Behavior,0.29,0.19,1.00,0.29,0.03,-0.06
+Self-Report about Subjective States,0.21,0.05,0.29,1.00,0.13,0.03
+Neuro/Bio/Psychophys,-0.02,0.15,0.03,0.13,1.00,0.07
+Cognitive Ability,-0.14,-0.31,-0.06,0.03,0.07,1.00
