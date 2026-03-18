@@ -1,0 +1,621 @@
+---
+title: "Download article full texts (PDF/HTML) for sampled DOIs"
+author: "Ian Hussey"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: hide
+    highlight: haddock
+    theme: flatly
+    toc: yes
+    toc_float: yes
+    self_contained: true
+    code_download: true
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = TRUE, include = TRUE, warning = FALSE, message = FALSE)
+```
+
+# Configuration
+
+```{r}
+
+library(tidyverse)
+library(httr2)
+library(fs)
+library(cli)
+library(jsonlite)
+library(knitr)
+library(kableExtra)
+
+# --- User configuration ---
+
+# Email for polite API access (Crossref polite pool + Unpaywall)
+email <- "your.name@unibe.ch"  # TODO: set your institutional email
+
+# API keys (loaded from .Renviron — see .Renviron.example)
+elsevier_api_key <- Sys.getenv("ELSEVIER_API_KEY", unset = "")
+wiley_tdm_token  <- Sys.getenv("WILEY_TDM_TOKEN", unset = "")
+
+# Path to local APA HTML files (set to NULL if not yet received)
+# When available, set to the directory containing APA HTMLs.
+# Files should be named or matchable by DOI.
+apa_html_dir <- NULL  # e.g., "../data/06 apa_htmls/"
+
+# --- Paths ---
+input_file       <- "../data/04 processed/data_processed_subset_testing.csv"
+article_dir      <- "../data/05 articles"
+log_file         <- file.path(article_dir, "download_log.csv")
+crossref_cache   <- file.path(article_dir, "crossref_metadata_cache.csv")
+
+# --- Rate limiting ---
+rate_delay <- 1  # seconds between requests
+
+# Create output directory
+fs::dir_create(article_dir)
+
+```
+
+# Load DOIs to download
+
+```{r}
+
+data_to_download <- read_csv(input_file) |>
+  distinct(DOI, .keep_all = TRUE) |>
+  filter(!is.na(DOI), DOI != "")
+
+message(sprintf("Loaded %d unique DOIs to download", nrow(data_to_download)))
+
+```
+
+# Crossref metadata enrichment
+
+Fetch `publisher` and TDM `link` URLs for each DOI from the Crossref REST API. Results are cached so this only runs once.
+
+```{r}
+
+fetch_crossref_metadata <- function(doi, email) {
+  tryCatch({
+    resp <- request(paste0("https://api.crossref.org/works/", URLencode(doi, reserved = TRUE))) |>
+      req_headers(`User-Agent` = paste0("R/httr2 (mailto:", email, "; academic research)")) |>
+      req_timeout(30) |>
+      req_error(is_error = \(resp) FALSE) |>
+      req_perform()
+
+    if (resp_status(resp) != 200) {
+      return(tibble(DOI = doi, publisher = NA_character_, tdm_url = NA_character_))
+    }
+
+    msg <- resp_body_json(resp)$message
+
+    # Extract publisher
+    publisher <- msg$publisher %||% NA_character_
+
+    # Extract best TDM/PDF link
+    tdm_url <- NA_character_
+    if (!is.null(msg$link) && length(msg$link) > 0) {
+      # Prefer PDF links intended for text-mining
+      for (lnk in msg$link) {
+        ct <- lnk$`content-type` %||% ""
+        ia <- lnk$`intended-application` %||% ""
+        if (grepl("pdf", ct, ignore.case = TRUE) || ia == "text-mining") {
+          tdm_url <- lnk$URL %||% NA_character_
+          break
+        }
+      }
+      # Fall back to first link if no PDF-specific one found
+      if (is.na(tdm_url)) {
+        tdm_url <- msg$link[[1]]$URL %||% NA_character_
+      }
+    }
+
+    tibble(DOI = doi, publisher = publisher, tdm_url = tdm_url)
+  }, error = function(e) {
+    tibble(DOI = doi, publisher = NA_character_, tdm_url = NA_character_)
+  })
+}
+
+# Load cache or fetch
+if (file.exists(crossref_cache)) {
+  crossref_meta <- read_csv(crossref_cache, col_types = cols(.default = "c"))
+  dois_to_fetch <- setdiff(data_to_download$DOI, crossref_meta$DOI)
+} else {
+  crossref_meta <- tibble(DOI = character(), publisher = character(), tdm_url = character())
+  dois_to_fetch <- data_to_download$DOI
+}
+
+if (length(dois_to_fetch) > 0) {
+  message(sprintf("Fetching Crossref metadata for %d DOIs...", length(dois_to_fetch)))
+  cli_progress_bar("Crossref metadata", total = length(dois_to_fetch))
+
+  new_records <- list()
+  for (i in seq_along(dois_to_fetch)) {
+    new_records[[i]] <- fetch_crossref_metadata(dois_to_fetch[i], email)
+    Sys.sleep(rate_delay)
+    cli_progress_update()
+
+    # Flush to cache every 500 records
+    if (i %% 500 == 0) {
+      batch <- bind_rows(new_records)
+      crossref_meta <- bind_rows(crossref_meta, batch)
+      write_csv(crossref_meta, crossref_cache)
+      new_records <- list()
+      message(sprintf("  Cached %d/%d", i, length(dois_to_fetch)))
+    }
+  }
+
+  # Final flush
+  if (length(new_records) > 0) {
+    batch <- bind_rows(new_records)
+    crossref_meta <- bind_rows(crossref_meta, batch)
+    write_csv(crossref_meta, crossref_cache)
+  }
+
+  cli_progress_done()
+}
+
+# Join metadata to download list
+data_to_download <- data_to_download |>
+  left_join(crossref_meta |> select(DOI, publisher, tdm_url), by = "DOI")
+
+message(sprintf("Publisher info available for %d/%d DOIs",
+                sum(!is.na(data_to_download$publisher)), nrow(data_to_download)))
+message(sprintf("TDM URLs available for %d/%d DOIs",
+                sum(!is.na(data_to_download$tdm_url)), nrow(data_to_download)))
+
+```
+
+# Download helper functions
+
+```{r}
+
+# --- File validation ---
+
+is_valid_pdf <- function(path) {
+  if (!file.exists(path) || file.size(path) < 1000) return(FALSE)
+  con <- file(path, "rb")
+  on.exit(close(con))
+  header <- readBin(con, "raw", 5)
+  identical(header, charToRaw("%PDF-"))
+}
+
+is_valid_html <- function(path) {
+  if (!file.exists(path) || file.size(path) < 1000) return(FALSE)
+  first_bytes <- readLines(path, n = 5, warn = FALSE) |> paste(collapse = " ")
+  grepl("<html|<!DOCTYPE", first_bytes, ignore.case = TRUE)
+}
+
+safe_filename <- function(doi) {
+  gsub("[^a-zA-Z0-9._-]", "_", doi)
+}
+
+# --- Strategy 0: Local APA HTMLs ---
+
+try_apa_local <- function(doi, publisher, apa_html_dir) {
+  if (is.null(apa_html_dir) || is.na(publisher)) {
+    return(list(success = FALSE, method = "apa_local", path = NA_character_))
+  }
+  if (!grepl("American Psychological Association", publisher, ignore.case = TRUE)) {
+    return(list(success = FALSE, method = "apa_local", path = NA_character_))
+  }
+
+  # Try to find a matching file by DOI
+  safe_name <- safe_filename(doi)
+  candidates <- c(
+    file.path(apa_html_dir, paste0(safe_name, ".html")),
+    file.path(apa_html_dir, paste0(doi, ".html")),  # if stored with slashes
+    file.path(apa_html_dir, paste0(safe_name, ".htm"))
+  )
+
+  for (candidate in candidates) {
+    if (file.exists(candidate) && file.size(candidate) > 1000) {
+      return(list(success = TRUE, method = "apa_local", path = candidate))
+    }
+  }
+
+  # Fallback: search by partial DOI match in filenames
+  if (dir.exists(apa_html_dir)) {
+    all_files <- list.files(apa_html_dir, pattern = "\\.(html?|htm)$", full.names = TRUE)
+    doi_suffix <- sub("^.*/", "", doi)  # part after last /
+    matches <- all_files[grepl(doi_suffix, all_files, fixed = TRUE)]
+    if (length(matches) > 0) {
+      return(list(success = TRUE, method = "apa_local", path = matches[1]))
+    }
+  }
+
+  list(success = FALSE, method = "apa_local", path = NA_character_)
+}
+
+# --- Strategy 1: TDM link from Crossref ---
+
+try_tdm_link <- function(doi, tdm_url, dest_path, email) {
+  if (is.na(tdm_url) || tdm_url == "") {
+    return(list(success = FALSE, method = "tdm_link"))
+  }
+
+  tryCatch({
+    resp <- request(tdm_url) |>
+      req_headers(
+        `User-Agent` = paste0("R/httr2 (mailto:", email, "; academic research)"),
+        Accept = "application/pdf"
+      ) |>
+      req_timeout(60) |>
+      req_error(is_error = \(resp) FALSE) |>
+      req_perform()
+
+    if (resp_status(resp) == 200) {
+      writeBin(resp_body_raw(resp), dest_path)
+      if (is_valid_pdf(dest_path) || is_valid_html(dest_path)) {
+        return(list(success = TRUE, method = "tdm_link"))
+      }
+      file.remove(dest_path)
+    }
+    list(success = FALSE, method = "tdm_link")
+  }, error = function(e) list(success = FALSE, method = "tdm_link", message = e$message))
+}
+
+# --- Strategy 2: Unpaywall ---
+
+try_unpaywall <- function(doi, dest_path, email) {
+  tryCatch({
+    api_url <- paste0("https://api.unpaywall.org/v2/",
+                       URLencode(doi, reserved = TRUE),
+                       "?email=", URLencode(email))
+    resp <- request(api_url) |>
+      req_headers(`User-Agent` = paste0("R/httr2 (mailto:", email, ")")) |>
+      req_timeout(30) |>
+      req_error(is_error = \(resp) FALSE) |>
+      req_perform()
+
+    if (resp_status(resp) != 200) {
+      return(list(success = FALSE, method = "unpaywall"))
+    }
+
+    data <- resp_body_json(resp)
+
+    # Try best_oa_location first, then oa_locations
+    pdf_url <- data$best_oa_location$url_for_pdf
+    if (is.null(pdf_url)) {
+      for (loc in (data$oa_locations %||% list())) {
+        if (!is.null(loc$url_for_pdf)) {
+          pdf_url <- loc$url_for_pdf
+          break
+        }
+      }
+    }
+    if (is.null(pdf_url)) {
+      return(list(success = FALSE, method = "unpaywall"))
+    }
+
+    # Download the article
+    pdf_resp <- request(pdf_url) |>
+      req_headers(Accept = "application/pdf") |>
+      req_timeout(60) |>
+      req_error(is_error = \(resp) FALSE) |>
+      req_perform()
+
+    if (resp_status(pdf_resp) == 200) {
+      writeBin(resp_body_raw(pdf_resp), dest_path)
+      if (is_valid_pdf(dest_path) || is_valid_html(dest_path)) {
+        return(list(success = TRUE, method = "unpaywall"))
+      }
+      file.remove(dest_path)
+    }
+    list(success = FALSE, method = "unpaywall")
+  }, error = function(e) list(success = FALSE, method = "unpaywall", message = e$message))
+}
+
+# --- Strategy 3: Publisher-specific APIs ---
+
+try_elsevier <- function(doi, dest_path, api_key) {
+  if (api_key == "") return(list(success = FALSE, method = "elsevier_api"))
+  tryCatch({
+    resp <- request(paste0("https://api.elsevier.com/content/article/doi/", doi)) |>
+      req_headers(
+        `X-ELS-APIKey` = api_key,
+        Accept = "application/pdf"
+      ) |>
+      req_timeout(60) |>
+      req_error(is_error = \(resp) FALSE) |>
+      req_perform()
+
+    if (resp_status(resp) == 200) {
+      writeBin(resp_body_raw(resp), dest_path)
+      if (is_valid_pdf(dest_path)) {
+        return(list(success = TRUE, method = "elsevier_api"))
+      }
+      file.remove(dest_path)
+    }
+    list(success = FALSE, method = "elsevier_api")
+  }, error = function(e) list(success = FALSE, method = "elsevier_api", message = e$message))
+}
+
+try_wiley <- function(doi, dest_path, token) {
+  if (token == "") return(list(success = FALSE, method = "wiley_tdm"))
+  tryCatch({
+    resp <- request(paste0("https://api.wiley.com/onlinelibrary/tdm/v1/articles/",
+                            URLencode(doi, reserved = TRUE))) |>
+      req_headers(
+        `Wiley-TDM-Client-Token` = token,
+        Accept = "application/pdf"
+      ) |>
+      req_timeout(60) |>
+      req_error(is_error = \(resp) FALSE) |>
+      req_perform()
+
+    if (resp_status(resp) == 200) {
+      writeBin(resp_body_raw(resp), dest_path)
+      if (is_valid_pdf(dest_path)) {
+        return(list(success = TRUE, method = "wiley_tdm"))
+      }
+      file.remove(dest_path)
+    }
+    list(success = FALSE, method = "wiley_tdm")
+  }, error = function(e) list(success = FALSE, method = "wiley_tdm", message = e$message))
+}
+
+try_springer <- function(doi, dest_path) {
+  tryCatch({
+    resp <- request(paste0("https://link.springer.com/content/pdf/",
+                            URLencode(doi, reserved = TRUE), ".pdf")) |>
+      req_headers(Accept = "application/pdf") |>
+      req_timeout(60) |>
+      req_error(is_error = \(resp) FALSE) |>
+      req_perform()
+
+    if (resp_status(resp) == 200 && grepl("pdf", resp_content_type(resp), ignore.case = TRUE)) {
+      writeBin(resp_body_raw(resp), dest_path)
+      if (is_valid_pdf(dest_path)) {
+        return(list(success = TRUE, method = "springer_direct"))
+      }
+      file.remove(dest_path)
+    }
+    list(success = FALSE, method = "springer_direct")
+  }, error = function(e) list(success = FALSE, method = "springer_direct", message = e$message))
+}
+
+try_publisher_api <- function(doi, publisher, dest_path,
+                               elsevier_key, wiley_token) {
+  publisher_lower <- tolower(publisher %||% "")
+
+  if (grepl("elsevier", publisher_lower)) {
+    return(try_elsevier(doi, dest_path, elsevier_key))
+  } else if (grepl("wiley", publisher_lower)) {
+    return(try_wiley(doi, dest_path, wiley_token))
+  } else if (grepl("springer|nature", publisher_lower)) {
+    return(try_springer(doi, dest_path))
+  }
+
+  list(success = FALSE, method = "publisher_api")
+}
+
+# --- Strategy 4: DOI content negotiation ---
+
+try_content_negotiation <- function(doi, dest_path, email) {
+  tryCatch({
+    resp <- request(paste0("https://doi.org/", doi)) |>
+      req_headers(
+        Accept = "application/pdf",
+        `User-Agent` = paste0("R/httr2 (mailto:", email, "; academic research)")
+      ) |>
+      req_timeout(60) |>
+      req_error(is_error = \(resp) FALSE) |>
+      req_perform()
+
+    if (resp_status(resp) == 200) {
+      writeBin(resp_body_raw(resp), dest_path)
+      if (is_valid_pdf(dest_path) || is_valid_html(dest_path)) {
+        return(list(success = TRUE, method = "content_negotiation"))
+      }
+      file.remove(dest_path)
+    }
+    list(success = FALSE, method = "content_negotiation")
+  }, error = function(e) list(success = FALSE, method = "content_negotiation", message = e$message))
+}
+
+```
+
+# Main download orchestrator
+
+```{r}
+
+download_article <- function(doi, publisher = NA, tdm_url = NA,
+                              article_dir, email, apa_html_dir,
+                              elsevier_key, wiley_token) {
+  safe_name <- safe_filename(doi)
+  dest_path <- file.path(article_dir, paste0(safe_name, ".pdf"))
+
+  # Skip if already downloaded
+  existing <- list.files(article_dir, pattern = paste0("^", safe_name, "\\."),
+                          full.names = TRUE)
+  if (length(existing) > 0 && any(file.size(existing) > 1000)) {
+    return(tibble(DOI = doi, success = TRUE, method = "already_exists",
+                   file_path = existing[1], message = ""))
+  }
+
+  # Strategy 0: Local APA HTMLs
+  result <- try_apa_local(doi, publisher, apa_html_dir)
+  if (isTRUE(result$success)) {
+    # Copy or symlink local file to article_dir
+    ext <- tools::file_ext(result$path)
+    local_dest <- file.path(article_dir, paste0(safe_name, ".", ext))
+    file.copy(result$path, local_dest, overwrite = FALSE)
+    return(tibble(DOI = doi, success = TRUE, method = "apa_local",
+                   file_path = local_dest, message = ""))
+  }
+
+  # Strategy 1: TDM link
+  result <- try_tdm_link(doi, tdm_url, dest_path, email)
+  if (isTRUE(result$success)) {
+    return(tibble(DOI = doi, success = TRUE, method = "tdm_link",
+                   file_path = dest_path, message = ""))
+  }
+
+  # Strategy 2: Unpaywall
+  result <- try_unpaywall(doi, dest_path, email)
+  if (isTRUE(result$success)) {
+    return(tibble(DOI = doi, success = TRUE, method = "unpaywall",
+                   file_path = dest_path, message = ""))
+  }
+
+  # Strategy 3: Publisher API
+  result <- try_publisher_api(doi, publisher, dest_path,
+                               elsevier_key, wiley_token)
+  if (isTRUE(result$success)) {
+    return(tibble(DOI = doi, success = TRUE, method = result$method,
+                   file_path = dest_path, message = ""))
+  }
+
+  # Strategy 4: DOI content negotiation (fallback)
+  result <- try_content_negotiation(doi, dest_path, email)
+  if (isTRUE(result$success)) {
+    return(tibble(DOI = doi, success = TRUE, method = "content_negotiation",
+                   file_path = dest_path, message = ""))
+  }
+
+  tibble(DOI = doi, success = FALSE, method = "all_failed",
+          file_path = NA_character_, message = result$message %||% "")
+}
+
+```
+
+# Run downloads
+
+```{r}
+
+# Load existing log to support resumption
+if (file.exists(log_file)) {
+  existing_log <- read_csv(log_file, col_types = cols(.default = "c"))
+  already_done <- existing_log |> filter(success == "TRUE") |> pull(DOI)
+  data_remaining <- data_to_download |> filter(!DOI %in% already_done)
+  message(sprintf("Resuming: %d already done, %d remaining",
+                  length(already_done), nrow(data_remaining)))
+} else {
+  data_remaining <- data_to_download
+  message(sprintf("Starting fresh: %d DOIs to download", nrow(data_remaining)))
+}
+
+# Download loop
+if (nrow(data_remaining) > 0) {
+  results <- list()
+  cli_progress_bar("Downloading articles", total = nrow(data_remaining))
+
+  for (i in seq_len(nrow(data_remaining))) {
+    row <- data_remaining[i, ]
+
+    result <- download_article(
+      doi          = row$DOI,
+      publisher    = row$publisher %||% NA_character_,
+      tdm_url      = row$tdm_url %||% NA_character_,
+      article_dir  = article_dir,
+      email        = email,
+      apa_html_dir = apa_html_dir,
+      elsevier_key = elsevier_api_key,
+      wiley_token  = wiley_tdm_token
+    )
+
+    result$timestamp <- as.character(Sys.time())
+    results[[i]] <- result
+
+    # Flush to log every 100 records for crash resilience
+    if (i %% 100 == 0) {
+      batch <- bind_rows(results)
+      write_csv(batch, log_file, append = file.exists(log_file))
+      results <- list()
+
+      n_success <- batch |> filter(success == TRUE) |> nrow()
+      message(sprintf("  Progress: %d/%d | Batch success: %d/100",
+                      i, nrow(data_remaining), n_success))
+    }
+
+    # Polite rate limiting
+    Sys.sleep(rate_delay)
+    cli_progress_update()
+  }
+
+  # Write remaining results
+  if (length(results) > 0) {
+    batch <- bind_rows(results)
+    write_csv(batch, log_file, append = file.exists(log_file))
+  }
+
+  cli_progress_done()
+}
+
+```
+
+# Summary report
+
+```{r}
+
+if (file.exists(log_file)) {
+  log_data <- read_csv(log_file, col_types = cols(.default = "c")) |>
+    mutate(success = as.logical(success))
+
+  # Overall success rate
+  message(sprintf("\nOverall: %d/%d successful (%.1f%%)",
+                  sum(log_data$success), nrow(log_data),
+                  sum(log_data$success) / nrow(log_data) * 100))
+
+  # By method
+  log_data |>
+    count(success, method) |>
+    arrange(desc(success), desc(n)) |>
+    kable(caption = "Download results by method") |>
+    kable_classic(full_width = FALSE)
+}
+
+```
+
+```{r}
+
+if (file.exists(log_file)) {
+  # Success rate by publisher
+  data_to_download |>
+    left_join(log_data |> select(DOI, success, method), by = "DOI") |>
+    group_by(publisher) |>
+    summarize(
+      total = n(),
+      downloaded = sum(success == TRUE, na.rm = TRUE),
+      pct = round(downloaded / total * 100, 1),
+      .groups = "drop"
+    ) |>
+    arrange(desc(total)) |>
+    kable(caption = "Success rate by publisher") |>
+    kable_classic(full_width = FALSE)
+}
+
+```
+
+```{r}
+
+if (file.exists(log_file)) {
+  # List failed DOIs for manual investigation
+  failed_dois <- log_data |>
+    filter(!success) |>
+    left_join(data_to_download |> select(DOI, publisher, journal, title), by = "DOI")
+
+  if (nrow(failed_dois) > 0) {
+    message(sprintf("\n%d DOIs failed to download:", nrow(failed_dois)))
+
+    failed_dois |>
+      count(publisher, name = "n_failed") |>
+      arrange(desc(n_failed)) |>
+      kable(caption = "Failed downloads by publisher") |>
+      kable_classic(full_width = FALSE)
+
+    write_csv(failed_dois, file.path(article_dir, "failed_downloads.csv"))
+    message("Full list saved to: ", file.path(article_dir, "failed_downloads.csv"))
+  }
+}
+
+```
+
+# Session info
+
+```{r}
+
+sessionInfo()
+
+```
