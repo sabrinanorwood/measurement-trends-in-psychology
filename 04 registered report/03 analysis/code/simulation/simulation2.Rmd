@@ -1,0 +1,471 @@
+---
+title: "Measurement trends in psychology"
+subtitle: "Simulation study for priors"
+author: "Ian Hussey"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+  code_folding: hide
+highlight: haddock
+theme: flatly
+toc: yes
+toc_float: yes
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(message = FALSE, 
+                      warning = FALSE)
+
+```
+
+```{r}
+
+library(brms)
+library(tidyverse)
+library(scales)
+library(furrr)
+library(janitor)
+
+```
+
+# Visualise priors
+
+```{r}
+
+illustrate_intercept_prior <- function(mean_prob, sd_logodds){
+  
+  mean_logodds <- qlogis(mean_prob)
+  
+  df_normal_logodds <- 
+    tibble(logodds = rnorm(mean = mean_logodds, sd = sd_logodds, n = 10000000)) |>
+    mutate(probability = plogis(logodds))
+  
+  ggplot(df_normal_logodds, aes(probability)) +
+    geom_density(fill = "grey20") +
+    theme_linedraw() +
+    scale_x_continuous(breaks = breaks_pretty(n = 10)) +
+    xlab("Probability") +
+    ylab("Density") +
+    ggtitle(paste0("Prevalence prior: \nnormal(M = ", round_half_up(mean_logodds, 3), "), SD = ", sd_logodds, " on the log-odds scale, \ntransformed to probabilities"))
+}
+
+#illustrate_intercept_prior(mean_prob = .70, sd_logodds = 1) # self reports of subjective experience
+
+design <- tidyr::expand_grid(
+  rep        = 1:1000,                       # Monte Carlo replications
+  n          = 450,                         # sample sizes
+  p_true     = c(0.02, 0.10, 0.50, 0.75),         # true probabilities (DGP)
+  prior_mu_probability = c(0.02, 0.10, 0.25, 0.50),       # centre of prior on prob scale
+  prior_sigma_logodds = c(1, 1.1, 1.45)      # SD on logit scale
+) 
+
+# unique priors actually used in the simulation
+priors <- design |>
+  distinct(prior_mu_probability, prior_sigma_logodds)
+
+# make a plot for each prior
+prior_plots <- priors |>
+  mutate(plot = map2(
+    .x = prior_mu_probability,
+    .y = prior_sigma_logodds,
+    ~ illustrate_intercept_prior(
+      mean_prob  = .x,
+      sd_logodds = .y
+    )
+  ))
+
+# print them all to the current graphics device
+prior_plots$plot |> walk(print)
+```
+
+# Simulation
+
+Apparently doesn't run because reusing the base model doens't play nice with parallelisation, something about pointers.
+
+```{r}
+
+# # generate data
+# generate_data <- function(n, p_true) {
+#   tibble(
+#     y = rbinom(n = n, size = 1, prob = p_true)
+#   )
+# }
+# 
+# # fit base model to dummy data with dummy prior
+# # so that brms does not have to recompile model each iteration
+# dummy_dat <- generate_data(n = 10, p_true = 0.3)
+# 
+# fit_logit_base <- function(dat, prior_mu_probability, prior_sigma_logodds) {
+#   # 1. Compute numeric mean and sd on log-odds scale
+#   mu    <- qlogis(prior_mu_probability)   # numeric
+#   sigma <- prior_sigma_logodds           # already on log-odds scale
+#   
+#   # 2. Build prior string for Stan
+#   prior_str <- sprintf("normal(%0.10f, %0.10f)", mu, sigma)
+#   
+#   brm(
+#     formula       = bf(y ~ 1),
+#     family        = bernoulli(link = "logit"),
+#     data          = dat,
+#     prior         = prior_string(prior_str, class = "Intercept"),
+#     sample_prior  = "no",
+#     iter          = 2000,
+#     chains        = 1, # for parallelisation, done within furrr::future_map instead of here
+#     cores         = 4,
+#     refresh       = 0
+#   )
+# }
+# 
+# fitted_base <- fit_logit_base(dat = dummy_dat,
+#                               prior_mu_probability = 0.1, 
+#                               prior_sigma_logodds = 1.4)
+# 
+# 
+# # analysis function
+# fit_logit_update <- function(dat, prior_mu_probability, prior_sigma_logodds) {
+#   # 1. Compute numeric mean and sd on log-odds scale
+#   mu    <- qlogis(prior_mu_probability)   # numeric
+#   sigma <- prior_sigma_logodds           # already on log-odds scale
+#   
+#   # 2. Build prior string for Stan
+#   prior_str <- sprintf("normal(%0.10f, %0.10f)", mu, sigma)
+#   
+#   fit <- update(
+#     object        = fitted_base,
+#     formula       = bf(y ~ 1),
+#     family        = bernoulli(link = "logit"),
+#     data          = dat,
+#     prior         = prior_string(prior_str, class = "Intercept"),
+#     sample_prior  = "no",
+#     iter          = 2000,
+#     chains        = 4,
+#     cores         = 1,     # important with furrr::multisession
+#     refresh       = 0,
+#     # this provides a solution for compiling the model once and reusing it, using internal caching
+#     backend       = "cmdstanr"
+#   )
+#   
+#   # 2) summarise
+#   draws <- as_draws_df(fit)
+#   p     <- plogis(draws$b_Intercept)
+#   
+#   tibble(
+#     p_post_mean   = mean(p),
+#     p_post_median = median(p),
+#     p_post_lower  = quantile(p, 0.025),
+#     p_post_upper  = quantile(p, 0.975)
+#   )
+# }
+# 
+# safe_fit_and_summarise <- purrr::possibly(fit_logit_update, otherwise = NULL)
+# 
+# # run simulation
+# plan(multisession, workers = future::availableCores())
+# 
+# set.seed(42)
+# 
+# results <- design %>%
+#   mutate(data = furrr::future_pmap(.l = list(n = n,
+#                                              p_true = p_true), 
+#                                    .f = generate_data,
+#                                    .options = furrr_options(seed = TRUE))) |>
+#   mutate(post_summary  = furrr::future_pmap(.l = list(dat = data,
+#                                                       prior_mu_probability = prior_mu_probability,
+#                                                       prior_sigma_logodds = prior_sigma_logodds),
+#                                             .f = safe_fit_and_summarise,
+#                                             .options = furrr_options(seed = TRUE))) 
+# 
+# # write to disk
+# write_rds(results, "results.rds", compress = "gz")
+
+```
+
+# Simulation v2 using cmdstanr instead of update()
+
+Vibe coding suggested changing the backend, still not working.
+
+```{r}
+
+# install.packages(
+#   "cmdstanr",
+#   repos = c(
+#     "https://mc-stan.org/r-packages/",
+#     "https://cloud.r-project.org"
+#   )
+# )
+# 
+# library(cmdstanr)
+# cmdstanr::check_cmdstan_toolchain()
+# install_cmdstan()  # one-off; may take a while
+
+
+
+# # generate data
+# generate_data <- function(n, p_true) {
+#   tibble(
+#     y = rbinom(n = n, size = 1, prob = p_true)
+#   )
+# }
+# 
+# 
+# fit_and_summarise <- function(dat, prior_mu_probability, prior_sigma_logodds) {
+#   # 1) fit
+#   mu    <- qlogis(prior_mu_probability)
+#   sigma <- prior_sigma_logodds
+#   prior_str <- sprintf("normal(%0.10f, %0.10f)", mu, sigma)
+#   
+#   fit <- brm(
+#     formula       = bf(y ~ 1),
+#     family        = bernoulli(link = "logit"),
+#     data          = dat,
+#     prior         = prior_string(prior_str, class = "Intercept"),
+#     sample_prior  = "no",
+#     iter          = 2000,
+#     chains        = 4,
+#     cores         = 1,     # important with furrr::multisession
+#     refresh       = 0,
+#     # this provides a solution for compiling the model once and reusing it, using internal caching
+#     backend       = "cmdstanr"
+#   )
+#   
+#   # 2) summarise
+#   draws <- as_draws_df(fit)
+#   p     <- plogis(draws$b_Intercept)
+#   
+#   tibble(
+#     p_post_mean   = mean(p),
+#     p_post_median = median(p),
+#     p_post_lower  = quantile(p, 0.025),
+#     p_post_upper  = quantile(p, 0.975)
+#   )
+# }
+# 
+# safe_fit_and_summarise <- purrr::possibly(fit_and_summarise, otherwise = NULL)
+# 
+# # run simulation
+# plan(multisession, workers = future::availableCores())
+# 
+# set.seed(42)
+# 
+# results <- design %>%
+#   mutate(data = furrr::future_pmap(.l = list(n = n,
+#                                              p_true = p_true), 
+#                                    .f = generate_data,
+#                                    .options = furrr_options(seed = TRUE))) |>
+#   mutate(post_summary  = furrr::future_pmap(.l = list(dat = data,
+#                                                       prior_mu_probability = prior_mu_probability,
+#                                                       prior_sigma_logodds = prior_sigma_logodds),
+#                                             .f = safe_fit_and_summarise,
+#                                             .options = furrr_options(seed = TRUE))) 
+# 
+# # write to disk
+# write_rds(results, "results.rds", compress = "gz")
+
+```
+
+# Simulation v3 using cmdstanr instead of update(), alt
+
+Still having problems reusing the stan model while updating its priors.
+
+```{r}
+
+# install.packages(
+#   "cmdstanr",
+#   repos = c(
+#     "https://mc-stan.org/r-packages/",
+#     "https://cloud.r-project.org"
+#   )
+# )
+# 
+library(cmdstanr)
+#cmdstanr::check_cmdstan_toolchain()
+#cmdstanr::check_cmdstan_toolchain(fix = TRUE)
+# install_cmdstan()  # one-off; may take a while
+
+# generate data
+generate_data <- function(n, p_true) {
+  tibble(
+    y = rbinom(n = n, size = 1, prob = p_true)
+  )
+}
+
+# fit base model to dummy data with dummy prior
+# so that brms does not have to recompile model each iteration
+dummy_dat <- generate_data(n = 10, p_true = 0.3)
+
+
+options(brms.backend = "cmdstanr") # ensure we use the right brms backend throughout, for parallelisation
+
+fit_logit_base <- function(dat, prior_mu_probability, prior_sigma_logodds) {
+  # 1. Compute numeric mean and sd on log-odds scale
+  mu    <- qlogis(prior_mu_probability)   # numeric
+  sigma <- prior_sigma_logodds           # already on log-odds scale
+  
+  # 2. Build prior string for Stan
+  prior_str <- sprintf("normal(%0.10f, %0.10f)", mu, sigma)
+  
+  brm(
+    formula       = bf(y ~ 1),
+    family        = bernoulli(link = "logit"),
+    data          = dat,
+    prior         = prior_string(prior_str, class = "Intercept"),
+    sample_prior  = "no",
+    iter          = 2000,
+    chains        = 1, # for parallelisation, done within furrr::future_map instead of here
+    cores         = 4,
+    refresh       = 0,
+    backend       = "cmdstanr"
+  )
+}
+
+fitted_base <- fit_logit_base(dat = dummy_dat,
+                              prior_mu_probability = 0.1, 
+                              prior_sigma_logodds = 1.4)
+
+stan_code_path <- tempfile(pattern = "brms_sim_model", fileext = ".stan")
+writeLines(stancode(fitted_base), con = stan_code_path)
+
+# This object contains the path to the compiled C++ code.
+compiled_stan_model <- cmdstanr::cmdstan_model(stan_code_path)
+
+base_standata <- brms::make_standata(
+    formula = bf(y ~ 1),
+    family = bernoulli(link = "logit"),
+    data = fitted_base$data,
+    # Crucially, pass the prior that was used for the base compilation
+    prior = fitted_base$prior
+)
+
+# analysis function
+fit_logit_update <- function(dat, prior_mu_probability, prior_sigma_logodds, compiled_model, base_standata) {
+  # 1. Compute numeric mean and sd on log-odds scale
+  mu    <- qlogis(prior_mu_probability)   # numeric
+  sigma <- prior_sigma_logodds           # already on log-odds scale
+  
+  # 2. Build prior string for Stan
+  prior_str <- sprintf("normal(%0.10f, %0.10f)", mu, sigma)
+  
+  # This uses the data (dat) and the current simulation's prior.
+  current_standata <- brms::make_standata(
+    formula = bf(y ~ 1),
+    family = bernoulli(link = "logit"),
+    data = dat,
+    prior = prior_string(prior_str, class = "Intercept")
+  )
+  
+  # This updates the data (y, N) while keeping the structure defined by the base model.
+  stan_data_final <- c(current_standata, base_standata)
+  stan_data_final <- stan_data_final[!duplicated(names(stan_data_final))] # Remove duplicates
+  
+  fit <- brm(
+    formula       = bf(y ~ 1),
+    family        = bernoulli(link = "logit"),
+    data          = dat,
+    empty         = TRUE, # Stops brm from running full model creation
+    stanmodel     = compiled_model, 
+    stan_data     = stan_data_final,
+    prior         = prior_string(prior_str, class = "Intercept"),
+    sample_prior  = "no",
+    iter          = 2000,
+    chains        = 4,
+    cores         = 1,     # important with furrr::multisession
+    refresh       = 0,
+    backend       = "cmdstanr"
+  )
+  
+  # 2) summarise
+  draws <- as_draws_df(fit)
+  p     <- plogis(draws$b_Intercept)
+  
+  tibble(
+    p_post_mean   = mean(p),
+    p_post_median = median(p),
+    p_post_lower  = quantile(p, 0.025),
+    p_post_upper  = quantile(p, 0.975)
+  )
+}
+
+#safe_fit_and_summarise <- purrr::possibly(fit_logit_update, otherwise = NULL)
+
+# run simulation
+plan(multisession, workers = future::availableCores())
+
+set.seed(42)
+
+design_and_data <- design %>%
+  mutate(data = furrr::future_pmap(.l = list(n = n,
+                                             p_true = p_true), 
+                                   .f = generate_data,
+                                   .options = furrr_options(seed = TRUE)))
+
+results <- design_and_data |>
+  mutate(post_summary  = furrr::future_pmap(.l = list(dat = data,
+                                                      prior_mu_probability = prior_mu_probability,
+                                                      prior_sigma_logodds = prior_sigma_logodds,
+                                                      compiled_model = list(compiled_stan_model), # recycled via a list, as it is not in the data frame
+                                                      base_standata = list(base_standata)), # recycled via a list, as it is not in the data frame
+                                            .f = fit_logit_update,
+                                            .options = furrr_options(seed = TRUE))) 
+
+# write to disk
+write_rds(results, "results.rds", compress = "gz")
+
+```
+
+# Summarize results
+
+```{r}
+
+results <- read_rds("results.rds")
+
+# summarize results
+results_summary <- results |>
+  unnest(post_summary)
+
+results_summary |>
+  group_by(n, p_true, prior_mu_probability, prior_sigma_logodds) |>
+  summarize(mean_ppost_mean = mean(p_post_mean),
+            sd_ppost_mean = mean(p_post_mean)) |>
+  ggplot(aes(p_true, mean_ppost_mean)) +
+  geom_linerange(aes(ymin = mean_ppost_mean-prior_sigma_logodds, ymax = mean_ppost_mean+prior_sigma_logodds)) +
+  geom_point() + 
+  geom_abline(slope = 1, intercept = 0, linetype = "dotted") +
+  facet_grid(prior_mu_probability ~ prior_sigma_logodds)
+
+ggsave("results_summary.pdf", width = 6, height = 4)
+
+```
+
+```{r fig.height=8, fig.width=10}
+
+results_summary |>
+  group_by(p_true, prior_mu_probability, prior_sigma_logodds) |>
+  arrange(p_post_mean) |>
+  mutate(id = row_number()) |>
+  ungroup() |>
+  ggplot(aes(p_post_mean, id)) +
+  geom_point() +
+  ggstance::geom_linerangeh(aes(xmin = p_post_lower, xmax = p_post_upper)) +
+  geom_vline(aes(xintercept = p_true), color = "red") +
+  facet_grid(prior_sigma_logodds ~ prior_mu_probability)
+
+coverage <- results_summary |>
+  mutate(covered = dplyr::between(p_true, p_post_lower, p_post_upper)) |>
+  group_by(p_true, prior_mu_probability, prior_sigma_logodds) |>
+  summarize(coverage = mean(covered)) |>
+  arrange(coverage)
+
+write_csv(coverage, "results_coverage.csv")
+
+```
+
+# Session info
+
+```{r}
+
+sessionInfo()
+
+```
+
+
