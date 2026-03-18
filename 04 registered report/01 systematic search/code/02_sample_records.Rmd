@@ -23,12 +23,20 @@ knitr::opts_chunk$set(echo = TRUE, eval = TRUE, include = TRUE, warning = FALSE,
 
 library(tidyverse)
 library(janitor)
+library(knitr)
+library(kableExtra)
 
 options(scipen=999)
 
 ```
 
 # Load and clean data
+
+```{r}
+target_n_per_journal_per_year <- 25
+```
+
+NB n_available for PLOS ONE is estimated from a 2.5% prevalence!
 
 ```{r fig.height=25, fig.width=10}
 
@@ -53,25 +61,30 @@ data_processed <- read_rds("../data/04 processed/data_processed.rds") |>
 
 res_sampling <- data_processed |>
   group_by(journal) |>
-  summarize(n = n(),
-            min_year = min(year),
-            max_year = max(year),
-            years = max_year-min_year + 1) |>
-  arrange(desc(n)) |>
-  mutate(percent_sampled = round_half_up(years/n*100, digits = 3))
+  summarize(
+    n_available = n(),
+    min_year = min(year, na.rm = TRUE),
+    max_year = max(year, na.rm = TRUE),
+    year_span = max_year - min_year + 1
+  ) |>
+  mutate(
+    # about 2.5% of PLOS ONE articles are psych studies on humans, from training data
+    n_available = case_when(journal != "PLoS ONE" ~ n_available,
+                            journal == "PLoS ONE" ~ ceiling(n_available*0.025)), 
+    articles_per_year = round_half_up(n_available / year_span, 1),
+    # Percentage of total available records that would be taken 
+    # if you sampled 100 per year across the span
+    sampling_fraction_pct = round_half_up((target_n_per_journal_per_year * year_span) / n_available * 100, 0),
+    # Cap the fraction at 100% if the journal has fewer than 100 articles/year
+    sampling_fraction_pct = pmin(sampling_fraction_pct, 100)
+  ) |>
+  arrange(desc(n_available))
 
-res_sampling
+res_sampling |>
+  kable() |>
+  kable_classic(full_width = FALSE)
 
 write_csv(res_sampling, "../data/04 processed/data_sampling_counts.csv")
-
-data_processed |>
-  filter(journal == "PLoS ONE") |>
-  summarize(n_likely_psych = n()/50,
-            min_year = min(year),
-            max_year = max(year),
-            years = max_year-min_year + 1) |>
-  arrange(desc(n_likely_psych)) |>
-  mutate(percent_likely_psych_sampled = round_half_up(years/n_likely_psych*100, digits = 3))
 
 data_processed |>
   count(journal, year) |>
@@ -80,15 +93,20 @@ data_processed |>
   geom_vline(xintercept = 2024.5, linetype = "dashed", color = "darkred") +
   geom_point() +
   geom_line() +
+  ylab("N articles published") +
   facet_wrap(~ journal, scales = "free_y", ncol = 3)
 
 ```
+
+Total articles in testing if 30 journals * 19 years * `r target_n_per_journal_per_year` articles per year = `r 30 * 19 * target_n_per_journal_per_year`.
 
 # Sample
 
 ## Training
 
 ### PLoS ONE
+
+Select a random sample of 50 articles specifically from PLoS ONE to serve as an initial subset for training or manual coding.
 
 ```{r}
 
@@ -105,10 +123,19 @@ write_csv(data_processed_subset_training_plosone,
 
 ### Sampling
 
+Load the manually coded PLoS ONE data, filter for relevant psychological studies involving human participants, and then combine these with a stratified sample of 10 articles from all other journals to create a diverse training set.
+
 ```{r}
 
-data_processed_subset_training_plosone <- 
-  read_csv("../data/04 processed/data_processed_subset_training_plosone_coded.csv") |>
+# human coding of psych studies on human participants
+data_processed_subset_training_plosone_all <- 
+  read_csv("../data/04 processed/data_processed_subset_training_plosone_coded.csv")
+
+data_processed_subset_training_plosone_all |>
+  count(psych_study_on_human_participants) |>
+  mutate(percent = round(n/sum(n)*100, 1))
+
+data_processed_subset_training_plosone <- data_processed_subset_training_plosone_all |>
   filter(psych_study_on_human_participants)
 
 set.seed(42)
@@ -122,9 +149,23 @@ data_processed_subset_training <- data_processed |>
 write_csv(data_processed_subset_training,
           "../data/04 processed/data_processed_subset_training.csv")
 
+nrow(data_processed_subset_training)
+
+data_processed_subset_training |>
+  count(journal)
+
 ```
 
 ## Testing
+
+
+TODO DO WE NEED TO OVERSAMPLE ARTICLES HERE, BECAUSE THEY STILL HAVE TO BE SCREENED AGAINST THE INCLUSION/EXCLUSION CRITERIA?
+
+
+
+Identify all available data that was not used in the training set and extract a longitudinal sample of 150 PLoS ONE articles per year for testing purposes.
+
+NB from the training data, only about 2.5% of PLOS ONE articles are psych studies (so round down to 2%). Adding this as a multiplier: n_per_journal_per_year / prevalence * years = `r n_per_journal_per_year / 0.02 * 19`. 9500/19*0.02
 
 ```{r}
 
@@ -138,12 +179,18 @@ set.seed(42)
 data_processed_subset_testing_plosone <- data_processed_without_training |>
   filter(journal == "PLoS ONE") |>
   group_by(year) |>
-  slice_sample(n = 150)
+  slice_sample(n = target_n_per_journal_per_year / 0.02) 
 
 write_csv(data_processed_subset_testing_plosone,
           "../data/04 processed/data_processed_subset_testing_plosone.csv")
 
+nrow(data_processed_subset_testing_plosone)
+
 ```
+
+`data_processed_subset_testing_plosone.csv` needs to be converted to `data_processed_subset_testing_plosone_coded.csv` through an LLM screening process, adding the psych_study_on_human_participants (TRUE/FALSE) column. Place it in the same directory to be read back in the next chunk.
+
+Filter the coded testing subset for valid human participant studies and assemble the final testing dataset by sampling 10 articles per journal per year from the remaining non-PLoS ONE data.
 
 ```{r}
 
@@ -156,11 +203,13 @@ set.seed(42)
 data_processed_subset_testing <- data_processed_without_training |>
   filter(journal != "PLoS ONE") |>
   group_by(journal, year) |>
-  slice_sample(n = 10) 
-  #bind_rows(data_processed_subset_testing_plosone)
+  slice_sample(n = target_n_per_journal_per_year) |>
+  bind_rows(data_processed_subset_testing_plosone) # TODO uncomment this line once the plos one files are screened.
 
 write_csv(data_processed_subset_testing,
           "../data/04 processed/data_processed_subset_testing.csv")
+
+nrow(data_processed_subset_testing)
 
 ```
 
