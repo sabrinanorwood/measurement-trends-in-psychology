@@ -1,0 +1,203 @@
+---
+title: "Inter-rater reliability"
+author: "Ian Hussey"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: hide
+    highlight: haddock
+    theme: flatly
+    toc: yes
+    toc_float: yes
+    self_contained: true
+    code_download: true
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = TRUE, include = TRUE, warning = FALSE, message = FALSE)
+```
+
+# Dependencies
+
+```{r}
+
+library(tidyverse)
+library(janitor)
+library(readxl)
+library(psych)
+library(knitr)
+library(kableExtra)
+
+options(scipen=999)
+
+```
+
+# Get data
+
+```{r}
+
+dat_coder1 <- read_excel("../data/03 extractions for analysis/codebook_coder1.xlsx") |>
+  clean_names() |>
+  select(doi, study_number, how_it_is_measured_coder1 = how_it_is_measured, what_is_measured_coder1 = what_is_measured)
+
+dat_coder1 <- read_excel("../data/03 extractions for analysis/codebook_coder1.xlsx") |>
+  clean_names() |>
+  select(doi, study_number, how_it_is_measured_coder2 = how_it_is_measured, what_is_measured_coder2 = what_is_measured)
+
+```
+
+# Validation
+
+Ensure both coders have coded the same articles and studies
+
+```{r}
+
+dat_coder1_summary <- dat_coder1 |>
+  count(doi, study)
+
+dat_coder2_summary <- dat_coder2 |>
+  count(doi, study)
+
+identical(dat_coder1_summary, dat_coder2_summary)
+
+```
+
+# Combine and find disagreements
+
+```{r}
+
+dat_combined <- 
+  full_join(dat_coder1,
+            dat_coder2,
+            by = join_by("doi", "study_number")) |>
+  mutate(how_it_is_measured = case_when(how_it_is_measured_coder1 == how_it_is_measured_coder2 ~ how_it_is_measured_coder1,
+                                        TRUE ~ "DISAGREEMENT"),
+         what_is_measured = case_when(what_is_measured_coder1 == what_is_measured_coder2 ~ what_is_measured_coder1,
+                                      TRUE ~ "DISAGREEMENT"))
+
+write_csv(dat_combined, "../data/03 extractions for analysis/codebook_combined_before_resolution.csv")
+
+```
+
+# Resolve disagreements
+
+Manual step done outside of R - create 'codebook_combined_resolved_disagreements.csv' from 'codebook_combined_before_resolution.csv', changing the content of `how_it_is_measured` and `what_is_measured` to resolve disagreements based on mutual agreement.
+
+```{r}
+
+dat_resolved_disagreements <- read_csv("../data/03 extractions for analysis/codebook_combined_resolved_disagreements.csv") |>
+  mutate(category_rater1 = paste(how_it_is_measured_rater1, what_is_measured_rater1),
+         category_rater2 = paste(how_it_is_measured_rater2, what_is_measured_rater2),
+         category = case_when(is.na(how_it_is_measured) ~ NA_character_,
+                              how_it_is_measured == "Indeterminable" ~ NA_character_,
+                              how_it_is_measured == "Out of time" ~ NA_character_,
+                              is.na(what_is_measured) ~ NA_character_,
+                              what_is_measured == "Indeterminable" ~ NA_character_,
+                              what_is_measured == "Out of time" ~ NA_character_,
+                              TRUE ~ paste(how_it_is_measured, what_is_measured)))
+
+```
+
+# Inter-rater reliability
+
+Unweighted Kappa is used for non-ordered categories, as in our data.
+
+Interpreting Kappa isn't trivial, because "no one value of kappa can be regarded as universally acceptable" (Bakeman et al (1997), Detecting sequential patterns and determining their reliability with fallible observers) given that the number of categories influences it (more categories = higher Kappa) and the prevalence of each category influences it (more equitable = higher Kappa). 
+
+From their simulation study:
+
+```{r}
+
+knitr::include_graphics("Bakeman_1997_figure1.png")
+
+```
+
+I've added purple lines for the K = 5+highly variable probability lines, which best correspond to our study. We have K=6 and expect even higher variability in probability.
+
+Assuming these parameters, which are only approximate estimates of our own (K already known, variability as yet unknown during codebook validation):
+
+- Kappa ≥ 0.55 would imply an average of 85% accuracy across the two coders. We would consider this 'minimally acceptable' reliability.
+- Kappa ≥ 0.70 would imply an average of 90% accuracy across the two coders. We would consider this 'good' reliability.
+- Kappa ≥ 0.80 would imply an average of 95% accuracy across the two coders. We would consider this 'very good' reliability.
+
+## 'How it is measured'
+
+```{r}
+
+# Cohen's Kappa
+res_how <- dat_resolved_disagreements |>
+  select(how_it_is_measured_coder1, how_it_is_measured_coder2) %>%
+  cohen.kappa(x = .)
+
+res_how
+
+
+# percent agreement
+dat_resolved_disagreements |>
+  summarize(percent_agreement_how = mean(how_it_is_measured_coder1 == how_it_is_measured_coder2)*100) |>
+  round_half_up(1)
+
+dat_resolved_disagreements |>
+  group_by(how_it_is_measured) |>
+  summarize(percent_agreement_how = mean(how_it_is_measured_coder1 == how_it_is_measured_coder2)*100) |>
+  round_half_up(1)
+
+```
+
+## 'What is measured'
+
+```{r}
+
+# Cohen's Kappa
+res_what <- dat_resolved_disagreements |>
+  select(what_is_measured_coder1, what_is_measured_coder2) %>%
+  cohen.kappa(x = .)
+
+res_what
+
+
+# percent agreement
+dat_resolved_disagreements |>
+  summarize(percent_agreement_what = mean(what_is_measured_coder1 == what_is_measured_coder2)*100) |>
+  round_half_up(1)
+
+dat_resolved_disagreements |>
+  group_by(what_is_measured) |>
+  summarize(percent_agreement_what = mean(what_is_measured_coder1 == what_is_measured_coder2)*100) |>
+  round_half_up(1)
+
+```
+
+## Individual categories (combination of how and what)
+
+```{r}
+
+# Cohen's Kappa
+res_categories <- dat_resolved_disagreements |>
+  select(category_rater1, category_rater2) %>%
+  cohen.kappa(x = .)
+
+res_categories
+
+
+# percent agreement
+dat_resolved_disagreements |>
+  summarize(percent_agreement_what = mean(category_rater1 == category_rater2)*100) |>
+  round_half_up(1)
+
+
+dat_resolved_disagreements |>
+  group_by(category) |>
+  summarize(percent_agreement_how = mean(category_rater1 == category_rater2)*100) |>
+  round_half_up(1)
+
+```
+
+# Session info
+
+```{r}
+
+sessionInfo()
+
+```
+

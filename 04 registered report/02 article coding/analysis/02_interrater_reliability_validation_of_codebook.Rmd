@@ -1,0 +1,584 @@
+---
+title: "Inter-rater reliability"
+author: "Ian Hussey"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: hide
+    highlight: haddock
+    theme: flatly
+    toc: yes
+    toc_float: yes
+    self_contained: true
+    code_download: true
+---
+
+# TODO
+
+- look into what they are disagreeing on, especially what-behavior, to see if they're making consistent errors. 
+- Examine all examples of behavioural measures of behavior. 
+- Produce a table of all the names of the measures categorised by category, as a look up table for face validity.
+- use 'category' rather than remake the categories for the proportions?
+- do Proportion disagreement by consensus category
+- add to proportions, TODO add behavioral measure of behavior as DV
+
+
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = TRUE, include = TRUE, warning = FALSE, message = FALSE)
+```
+
+# Dependencies
+
+```{r}
+
+library(tidyverse)
+library(janitor)
+library(readxl)
+library(psych)
+library(irrCAC)
+library(irr)
+library(knitr)
+library(kableExtra)
+
+options(scipen=999)
+
+```
+
+# Get data
+
+```{r}
+
+dat_coder1 <- read_excel("../data/02 extractions for validation of the codebook/codebook_coder1.xlsx") |>
+  clean_names() |>
+  select(doi, study_number, measure_name, how_it_is_measured_coder1 = how_it_is_measured, what_is_measured_coder1 = what_is_measured,
+         recent_tech_coder1 = used_recent_technology_only_for_what_behavior, dv_coder1 = used_as_dv_only_for_what_behavior) |>
+  fill(doi, .direction = "down") |>
+  fill(study_number, .direction = "down")
+
+dat_coder2 <- read_excel("../data/02 extractions for validation of the codebook/codebook_coder2.xlsx") |>
+  clean_names() |>
+  select(doi, study_number, measure_name, how_it_is_measured_coder2 = how_it_is_measured, what_is_measured_coder2 = what_is_measured,
+         recent_tech_coder2 = used_recent_technology_only_for_what_behavior, dv_coder2 = used_as_dv_only_for_what_behavior) |>
+  fill(doi, .direction = "down") |>
+  fill(study_number, .direction = "down")
+
+```
+
+# Combine data from the two coders
+
+## Validation
+
+Ensure both coders have coded the same articles and studies
+
+```{r}
+
+dat_coder1_summary <- dat_coder1 |>
+  count(doi, name = "n_measures_coder1") 
+
+dat_coder2_summary <- dat_coder2 |>
+  count(doi, name = "n_measures_coder2") 
+
+dat_summary <- full_join(dat_coder1_summary, 
+                         dat_coder2_summary, 
+                         by = c("doi")) |>
+  mutate(n_measures_diff = n_measures_coder1 - n_measures_coder2) 
+
+dat_summary |>
+  count(n_measures_diff)
+
+```
+
+```{r}
+
+dat_coder1_summary <- dat_coder1 |>
+  count(doi, study_number, name = "n_measures_coder1") 
+
+dat_coder2_summary <- dat_coder2 |>
+  count(doi, study_number, name = "n_measures_coder2") 
+
+dat_summary <- full_join(dat_coder1_summary, 
+                         dat_coder2_summary, 
+                         by = c("doi", "study_number")) |>
+  mutate(n_measures_diff = n_measures_coder1 - n_measures_coder2) 
+
+dat_summary |>
+  count(n_measures_diff) 
+
+```
+
+## Combine and find disagreements
+
+```{r}
+
+dat_combined <- 
+  full_join(dat_coder1,
+            dat_coder2,
+            by = join_by("doi", "study_number", "measure_name")) |>
+  mutate(how_it_is_measured = case_when(how_it_is_measured_coder1 == how_it_is_measured_coder2 ~ how_it_is_measured_coder1,
+                                        how_it_is_measured_coder1 == "Out of time" ~ "Out of time",
+                                        how_it_is_measured_coder2 == "Out of time" ~ "Out of time",
+                                        TRUE ~ "DISAGREEMENT"),
+         what_is_measured = case_when(what_is_measured_coder1 == what_is_measured_coder2 ~ what_is_measured_coder1,
+                                      what_is_measured_coder1 == "Out of time" ~ "Out of time",
+                                      what_is_measured_coder2 == "Out of time" ~ "Out of time",
+                                      TRUE ~ "DISAGREEMENT"),
+         dv = case_when(dv_coder1 == dv_coder2 ~ dv_coder1,
+                        is.na(dv_coder1) & is.na(dv_coder2) ~ NA_character_,
+                        dv_coder1 == "Out of time" ~ "Out of time",
+                        dv_coder2 == "Out of time" ~ "Out of time",
+                        TRUE ~ "DISAGREEMENT"),
+         recent_tech = case_when(recent_tech_coder1 == recent_tech_coder2 ~ recent_tech_coder1,
+                                 is.na(recent_tech_coder1) & is.na(recent_tech_coder2) ~ NA_character_,
+                                 recent_tech_coder1 == "Out of time" ~ "Out of time",
+                                 recent_tech_coder2 == "Out of time" ~ "Out of time",
+                                 TRUE ~ "DISAGREEMENT"))
+
+matching_row_n <- nrow(dat_coder1) == nrow(dat_coder2) & nrow(dat_coder1) == nrow(dat_combined)
+
+write_csv(dat_combined, "../data/02 extractions for validation of the codebook/codebook_combined_before_resolution.csv")
+
+```
+
+Same number of rows in each of the codebooks and the combined one: `r matching_row_n`
+
+## Resolve disagreements
+
+Manual step done outside of R - create 'codebook_combined_resolved_disagreements.csv' from 'codebook_combined_before_resolution.csv', creating the following columns by consensus:
+
+- `how_it_is_measured_consensus`
+- `what_is_measured_consensus` 
+- `recent_tech_consensus`
+- `dv_consensus`
+
+```{r}
+
+dat_resolved <- read_excel("../data/02 extractions for validation of the codebook/codebook_combined_resolved_disagreements.xlsx") |>
+  mutate(category = case_when(is.na(how_it_is_measured_consensus) ~ NA_character_,
+                              how_it_is_measured_consensus == "Indeterminable" ~ NA_character_,
+                              how_it_is_measured_consensus == "Out of time" ~ NA_character_,
+                              is.na(what_is_measured_consensus) ~ NA_character_,
+                              what_is_measured_consensus == "Indeterminable" ~ NA_character_,
+                              what_is_measured_consensus == "Out of time" ~ NA_character_,
+                              TRUE ~ paste(how_it_is_measured_consensus, what_is_measured_consensus)))
+
+
+dat_coder_gpt <- read_excel("../data/02 extractions for validation of the codebook/codebook_combined_with_chatgpt.xlsx") |>
+  mutate(category = case_when(is.na(how_it_is_measured_consensus) ~ NA_character_,
+                              how_it_is_measured_consensus == "Indeterminable" ~ NA_character_,
+                              how_it_is_measured_consensus == "Out of time" ~ NA_character_,
+                              is.na(what_is_measured_consensus) ~ NA_character_,
+                              what_is_measured_consensus == "Indeterminable" ~ NA_character_,
+                              what_is_measured_consensus == "Out of time" ~ NA_character_,
+                              TRUE ~ paste(how_it_is_measured_consensus, what_is_measured_consensus))) |>
+  select(-starts_with("chagpt"))
+
+identical(dat_resolved, dat_coder_gpt)
+
+common_cols <- intersect(names(dat_resolved), names(dat_coder_gpt))
+
+
+# If you want a more detailed report of any differences:
+diff_summary <- lapply(common_cols, function(col) {
+  same <- identical(dat_resolved[[col]], dat_coder_gpt[[col]])
+  list(column = col, identical = same)
+})
+diff_summary <- bind_rows(lapply(diff_summary, as.data.frame))
+
+# Show only columns that differ (if any)
+diff_summary %>% filter(!identical)
+
+
+```
+
+# Proportion disagreement
+
+```{r}
+
+dat_resolved |>
+  select(doi, how_it_is_measured, what_is_measured, dv, recent_tech) |>
+  pivot_longer(cols = -doi,
+               names_to = "dimension", 
+               values_to = "coding") |>
+  group_by(dimension) |>
+  summarize(percent_disagreement = mean(coding == "DISAGREEMENT"))
+
+dat_resolved |>
+  select(doi, how_it_is_measured, what_is_measured, dv, recent_tech) |>
+  pivot_longer(cols = -doi,
+               names_to = "dimension", 
+               values_to = "coding") |>
+  group_by(dimension) |>
+  summarize(percent_out_of_time = mean(coding == "Out of time"))
+
+dat_resolved |>
+  select(doi, how_it_is_measured, what_is_measured, dv, recent_tech) |>
+  pivot_longer(cols = -doi,
+               names_to = "dimension", 
+               values_to = "coding") |>
+  group_by(dimension) |>
+  summarize(percent_disagreement_or_out_of_time = mean(coding %in% c("DISAGREEMENT", "Out of time")))
+
+```
+
+# Inter-Rater Reliability
+
+There are no widely used interpretation cutoffs for Iota and AC1/AC2 specifically. Although the Landis & Koch (1977)/Altman bands for Kappa are both used for other IRR metrics and yet criticized. For better or worse, we'll use them.
+
+- ≥0.40 → Moderate agreement
+- ≥0.60 → Good agreement
+- ≥0.80 → Very good agreement
+
+## Wrangle
+
+```{r}
+
+# how
+dat_doi_level_codings_how_r1 <- dat_resolved |>
+  select(doi, measure_name, how_it_is_measured_coder1) |>
+  count(doi, how_it_is_measured_coder1) |>
+  mutate(present = n > 0) |>
+  select(-n) |>
+  pivot_wider(names_from = "how_it_is_measured_coder1",
+              values_from = "present",
+              names_prefix = "r1_") |>
+  janitor::clean_names() |>
+  mutate(
+    r1_indeterminable = if_else(is.na(r1_indeterminable), FALSE, r1_indeterminable),
+    #r1_out_of_time = if_else(is.na(r1_out_of_time), FALSE, r1_out_of_time),
+    r1_self_report = if_else(is.na(r1_self_report), FALSE, r1_self_report),
+    r1_behavioral_frequency_duration_latency = if_else(is.na(r1_behavioral_frequency_duration_latency), FALSE, r1_behavioral_frequency_duration_latency),
+    r1_neuro_bio_physiological = if_else(is.na(r1_neuro_bio_physiological), FALSE, r1_neuro_bio_physiological),
+    r1_test = if_else(is.na(r1_test), FALSE, r1_test)
+    #r1_na = if_else(is.na(r1_na), FALSE, r1_na),
+  )
+
+dat_doi_level_codings_how_r2 <- dat_resolved |>
+  select(doi, measure_name, how_it_is_measured_coder2) |>
+  count(doi, how_it_is_measured_coder2) |>
+  mutate(present = n > 0) |>
+  select(-n) |>
+  pivot_wider(names_from = "how_it_is_measured_coder2",
+              values_from = "present",
+              names_prefix = "r2_") |>
+  janitor::clean_names() |>
+  mutate(
+    r2_indeterminable = if_else(is.na(r2_indeterminable), FALSE, r2_indeterminable),
+    #r2_out_of_time = if_else(is.na(r2_out_of_time), FALSE, r2_out_of_time),
+    r2_self_report = if_else(is.na(r2_self_report), FALSE, r2_self_report),
+    r2_behavioral_frequency_duration_latency = if_else(is.na(r2_behavioral_frequency_duration_latency), FALSE, r2_behavioral_frequency_duration_latency),
+    r2_neuro_bio_physiological = if_else(is.na(r2_neuro_bio_physiological), FALSE, r2_neuro_bio_physiological),
+    r2_test = if_else(is.na(r2_test), FALSE, r2_test)
+    #r2_na = if_else(is.na(r2_na), FALSE, r2_na),
+  )
+
+dat_doi_level_codings_how_consensus <- dat_resolved |>
+  select(doi, measure_name, how_it_is_measured_consensus) |>
+  count(doi, how_it_is_measured_consensus) |>
+  mutate(present = n > 0) |>
+  select(-n) |>
+  pivot_wider(names_from = "how_it_is_measured_consensus",
+              values_from = "present",
+              names_prefix = "consensus_") |>
+  janitor::clean_names() |>
+  mutate(
+    consensus_indeterminable = if_else(is.na(consensus_indeterminable), FALSE, consensus_indeterminable),
+    #consensus_out_of_time = if_else(is.na(consensus_out_of_time), FALSE, consensus_out_of_time),
+    consensus_self_report = if_else(is.na(consensus_self_report), FALSE, consensus_self_report),
+    consensus_behavioral_frequency_duration_latency = if_else(is.na(consensus_behavioral_frequency_duration_latency), FALSE, consensus_behavioral_frequency_duration_latency),
+    consensus_neuro_bio_physiological = if_else(is.na(consensus_neuro_bio_physiological), FALSE, consensus_neuro_bio_physiological),
+    consensus_test = if_else(is.na(consensus_test), FALSE, consensus_test)
+    #consensus_na = if_else(is.na(consensus_na), FALSE, consensus_na),
+  )
+
+dat_doi_level_codings_how <- dat_doi_level_codings_how_r1 |>
+  full_join(dat_doi_level_codings_how_r2, by = "doi") |>
+  full_join(dat_doi_level_codings_how_consensus, by = "doi")
+
+# what
+dat_doi_level_codings_what_r1 <- dat_resolved |>
+  select(doi, measure_name, what_is_measured_coder1) |>
+  count(doi, what_is_measured_coder1) |>
+  mutate(present = n > 0) |>
+  select(-n) |>
+  pivot_wider(names_from = "what_is_measured_coder1",
+              values_from = "present",
+              names_prefix = "r1_") |>
+  janitor::clean_names() |>
+  mutate(
+    r1_indeterminable                      = if_else(is.na(r1_indeterminable),                      FALSE, r1_indeterminable),
+    r1_out_of_time                         = if_else(is.na(r1_out_of_time),                         FALSE, r1_out_of_time),
+    r1_subjective_experience               = if_else(is.na(r1_subjective_experience),               FALSE, r1_subjective_experience),
+    r1_behavior                            = if_else(is.na(r1_behavior),                            FALSE, r1_behavior),
+    r1_neuro_bio_physiology                = if_else(is.na(r1_neuro_bio_physiology),                FALSE, r1_neuro_bio_physiology),
+    r1_mental_ability_or_cognitive_process = if_else(is.na(r1_mental_ability_or_cognitive_process), FALSE, r1_mental_ability_or_cognitive_process)
+    #r1_na                                  = if_else(is.na(r1_na),                                  FALSE, r1_na),
+  )
+
+dat_doi_level_codings_what_r2 <- dat_resolved |>
+  select(doi, measure_name, what_is_measured_coder2) |>
+  count(doi, what_is_measured_coder2) |>
+  mutate(present = n > 0) |>
+  select(-n) |>
+  pivot_wider(names_from = "what_is_measured_coder2",
+              values_from = "present",
+              names_prefix = "r2_") |>
+  janitor::clean_names() |>
+  mutate(
+    r2_indeterminable                      = if_else(is.na(r2_indeterminable),                      FALSE, r2_indeterminable),
+    r2_out_of_time                         = if_else(is.na(r2_out_of_time),                         FALSE, r2_out_of_time),
+    r2_subjective_experience               = if_else(is.na(r2_subjective_experience),               FALSE, r2_subjective_experience),
+    r2_behavior                            = if_else(is.na(r2_behavior),                            FALSE, r2_behavior),
+    r2_neuro_bio_physiology                = if_else(is.na(r2_neuro_bio_physiology),                FALSE, r2_neuro_bio_physiology),
+    r2_mental_ability_or_cognitive_process = if_else(is.na(r2_mental_ability_or_cognitive_process), FALSE, r2_mental_ability_or_cognitive_process)
+    #r2_na                                  = if_else(is.na(r2_na),                                  FALSE, r2_na),
+  )
+
+dat_doi_level_codings_what_consensus <- dat_resolved |>
+  select(doi, measure_name, what_is_measured_consensus) |>
+  count(doi, what_is_measured_consensus) |>
+  mutate(present = n > 0) |>
+  select(-n) |>
+  pivot_wider(names_from = "what_is_measured_consensus",
+              values_from = "present",
+              names_prefix = "consensus_") |>
+  janitor::clean_names() |>
+  mutate(
+    consensus_indeterminable = if_else(is.na(consensus_indeterminable), FALSE, consensus_indeterminable),
+    #consensus_out_of_time = if_else(is.na(consensus_out_of_time), FALSE, consensus_out_of_time),
+    consensus_subjective_experience = if_else(is.na(consensus_subjective_experience), FALSE, consensus_subjective_experience),
+    consensus_behavior = if_else(is.na(consensus_behavior), FALSE, consensus_behavior),
+    consensus_neuro_bio_physiology = if_else(is.na(consensus_neuro_bio_physiology), FALSE, consensus_neuro_bio_physiology),
+    consensus_mental_ability_or_cognitive_process = if_else(is.na(consensus_mental_ability_or_cognitive_process), FALSE, consensus_mental_ability_or_cognitive_process)
+    #consensus_na = if_else(is.na(consensus_na), FALSE, consensus_na),
+  )
+
+dat_doi_level_codings_what <- dat_doi_level_codings_what_r1 |>
+  full_join(dat_doi_level_codings_what_r2, by = "doi") |>
+  full_join(dat_doi_level_codings_what_consensus, by = "doi")
+
+```
+
+## Across all 8 categories 
+
+(4 categories * 2 dimensions) applied at the DOI level: Iota metric
+
+```{r}
+
+r1_items <- full_join(
+  dat_doi_level_codings_how_r1,
+  dat_doi_level_codings_what_r1,
+  by = "doi"
+) |>
+  arrange(doi) %>%
+  rename_with(~ gsub("r1_", "", .x)) |>
+  select(self_report, test, behavioral_frequency_duration_latency, neuro_bio_physiological, 
+         subjective_experience, mental_ability_or_cognitive_process, behavior, neuro_bio_physiology) 
+
+r2_items <- full_join(
+  dat_doi_level_codings_how_r2,
+  dat_doi_level_codings_what_r2,
+  by = "doi"
+) |>
+  arrange(doi) %>%
+  rename_with(~ gsub("r2_", "", .x)) |>
+  select(self_report, test, behavioral_frequency_duration_latency, neuro_bio_physiological, 
+         subjective_experience, mental_ability_or_cognitive_process, behavior, neuro_bio_physiology) 
+
+items <- intersect(colnames(r1_items), colnames(r2_items))
+
+rating_list <- lapply(items, function(item) {
+  cbind(
+    r1 = r1_items[[item]],
+    r2 = r2_items[[item]]
+  )
+})
+names(rating_list) <- items
+
+res_iota <- iota(rating_list, scaledata = "nominal")
+
+
+
+# bootstrap CI over subjects (DOIs)
+set.seed(123)
+
+n_subj <- nrow(rating_list[[1]])   # number of DOIs
+B      <- 5000L                    # number of bootstrap resamples
+
+iota_boot <- numeric(B)
+
+for (b in seq_len(B)) {
+  idx <- sample.int(n_subj, n_subj, replace = TRUE)  # resample DOIs
+  rating_list_b <- lapply(rating_list, function(mat) {
+    mat[idx, , drop = FALSE]
+  })
+  iota_boot[b] <- iota(rating_list_b, scaledata = "nominal")$value
+}
+
+# percentile 95% CI
+cis <- quantile(iota_boot, probs = c(0.025, 0.975))
+
+data.frame(iota = as.numeric(res_iota$value),
+           ci_lower = as.numeric(cis[1]),
+           ci_upper = as.numeric(cis[2])) |>
+  round_half_up(2)
+
+```
+
+## For individual categories DOI level 
+
+Applied at the DOI level: Gwent's AC1 metric.
+
+| Statistic                      | Chance-corrected?  | Prevalence-sensitive?  | Suitable for binary data?  | Notes                                                                  |
+|:-------------------------------|:-------------------|:-----------------------|:---------------------------|:-----------------------------------------------------------------------|
+| **Cohen’s κ**                  | Yes                | High                   | Yes                        | Common but suffers from prevalence & bias paradoxes.                   |
+| **Percent agreement (Po)**     | No                 | High                   | Yes                        | Purely descriptive; inflated under skew, which is present in our data. |
+| **Krippendorff’s α**           | Yes                | Medium                 | Yes                        | Handles missing data; more general than κ/AC1.                         |
+| **Gwet’s AC1**                 | Yes                | Low                    | Yes                        | Best κ alternative; avoids κ paradox.                                  |
+
+```{r}
+
+tidy_ac1 <- function(.data, var1, var2){
+  res <- .data |>
+    select({{var1}}, {{var2}}) %>%
+    gwet.ac1.raw(.)
+  
+  prop_agreement <- .data |>
+    summarize(prop_agreement = mean({{var1}} == {{var2}})) |>
+    pull(prop_agreement)
+  
+  res$est |>
+    select(gwents_ac1 = coeff.val,
+           conf.int) |>
+    mutate(conf.int = str_remove(conf.int, "\\("),
+           conf.int = str_remove(conf.int, "\\)")) |>
+    separate(conf.int, into = c("ci_lower", "ci_upper"), sep = ",") |>
+    mutate(ci_lower = as.numeric(ci_lower),
+           ci_upper = as.numeric(ci_upper)) |>
+    mutate(proportion_agreement = prop_agreement) |>
+    select(proportion_agreement, gwents_ac1, ci_lower, ci_upper)
+}
+
+results_ac1 <- bind_rows(
+  tidy_ac1(dat_doi_level_codings_how, r1_self_report, r2_self_report)                                                     |> mutate(dimension = "how", category = "subjective experience"),
+  tidy_ac1(dat_doi_level_codings_how, r1_behavioral_frequency_duration_latency, r2_behavioral_frequency_duration_latency) |> mutate(dimension = "how", category = "ability"),
+  tidy_ac1(dat_doi_level_codings_how, r1_neuro_bio_physiological, r2_neuro_bio_physiological)                             |> mutate(dimension = "how", category = "behavior"),
+  tidy_ac1(dat_doi_level_codings_how, r1_test, r2_test)                                                                   |> mutate(dimension = "how", category = "neuro"),
+  
+  tidy_ac1(dat_doi_level_codings_what, r1_subjective_experience, r2_subjective_experience)                                |> mutate(dimension = "what", category = "subjective experience"),
+  tidy_ac1(dat_doi_level_codings_what, r1_mental_ability_or_cognitive_process, r2_mental_ability_or_cognitive_process)    |> mutate(dimension = "what", category = "ability"),
+  tidy_ac1(dat_doi_level_codings_what, r1_behavior, r2_behavior)                                                          |> mutate(dimension = "what", category = "behavior"),
+  tidy_ac1(dat_doi_level_codings_what, r1_neuro_bio_physiology, r2_neuro_bio_physiology)                                  |> mutate(dimension = "what", category = "neuro")
+) |>
+  relocate(category) |>
+  relocate(dimension) 
+
+results_ac1 |>
+  mutate_if(is.numeric, round_half_up, digits = 2) |>
+  kable() |>
+  kable_classic(full_width = FALSE)
+
+```
+
+## For individual categories measure level
+
+Applied at the measure level: AC2_nominal 
+
+Could also be used for the measure-level codings, but these aren't directly relied on by the analysis.
+
+TODO
+
+# Proportions
+
+```{r}
+
+dat_doi_level_codings_what |>
+  count(consensus_subjective_experience) |>
+  mutate(prop = janitor::round_half_up(n/sum(n), 3)) |>
+  arrange(desc(n))
+
+dat_doi_level_codings_what |>
+  count(consensus_behavior) |>
+  mutate(prop = janitor::round_half_up(n/sum(n), 3)) |>
+  arrange(desc(n))
+
+dat_doi_level_codings_what |>
+  count(consensus_mental_ability_or_cognitive_process) |>
+  mutate(prop = janitor::round_half_up(n/sum(n), 3)) |>
+  arrange(desc(n))
+
+dat_doi_level_codings_what |>
+  count(consensus_neuro_bio_physiology) |>
+  mutate(prop = janitor::round_half_up(n/sum(n), 3)) |>
+  arrange(desc(n))
+
+```
+
+```{r}
+
+dat_doi_level_codings_how |>
+  count(consensus_self_report) |>
+  mutate(prop = janitor::round_half_up(n/sum(n), 3)) |>
+  arrange(desc(n))
+
+dat_doi_level_codings_how |>
+  count(consensus_behavioral_frequency_duration_latency) |>
+  mutate(prop = janitor::round_half_up(n/sum(n), 3)) |>
+  arrange(desc(n))
+
+dat_doi_level_codings_how |>
+  count(consensus_test) |>
+  mutate(prop = janitor::round_half_up(n/sum(n), 3)) |>
+  arrange(desc(n))
+
+dat_doi_level_codings_how |>
+  count(consensus_neuro_bio_physiological) |>
+  mutate(prop = janitor::round_half_up(n/sum(n), 3)) |>
+  arrange(desc(n))
+
+```
+
+```{r}
+
+dat_doi_level_codings <- 
+  full_join(dat_doi_level_codings_how, 
+            dat_doi_level_codings_what,
+            by = "doi") |>
+  select(doi, starts_with("consensus")) |>
+  mutate(behavioral_measure_of_behavior = consensus_behavior & consensus_behavioral_frequency_duration_latency,
+         self_report_of_subjective_experience = consensus_self_report & consensus_subjective_experience,
+         test_of_ability = consensus_mental_ability_or_cognitive_process & consensus_test, 
+         neuro_neuro = consensus_neuro_bio_physiological & consensus_neuro_bio_physiology)
+
+
+dat_doi_level_codings |>
+  count(self_report_of_subjective_experience) |>
+  mutate(prop = janitor::round_half_up(n/sum(n), 3)) |>
+  arrange(desc(n))
+
+dat_doi_level_codings |>
+  count(behavioral_measure_of_behavior) |>
+  mutate(prop = janitor::round_half_up(n/sum(n), 3)) |>
+  arrange(desc(n))
+
+dat_doi_level_codings |>
+  count(test_of_ability) |>
+  mutate(prop = janitor::round_half_up(n/sum(n), 3)) |>
+  arrange(desc(n))
+
+dat_doi_level_codings |>
+  count(neuro_neuro) |>
+  mutate(prop = janitor::round_half_up(n/sum(n), 3)) |>
+  arrange(desc(n))
+
+```
+
+
+# Session info
+
+```{r}
+
+sessionInfo()
+
+```
+
