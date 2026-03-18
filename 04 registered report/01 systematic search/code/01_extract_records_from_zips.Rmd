@@ -138,6 +138,7 @@ for (file in files_to_process) {
     select(
       ISSN,
       DOI,
+      publisher,
       authors,
       year,
       title     = article_title,
