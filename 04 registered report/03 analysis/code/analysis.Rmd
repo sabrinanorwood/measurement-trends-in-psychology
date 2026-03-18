@@ -264,8 +264,11 @@ The asymmetry between low and high is intentional, reflecting our stronger belie
 ```{r}
 
 illustrate_intercept_prior <- function(mean_prob, sd_logodds){
+  
+  mean_logodds <- qlogis(mean_prob)
+  
   df_normal_logodds <- 
-    tibble(logodds = rnorm(mean = qlogis(mean_prob), sd = sd_logodds, n = 10000000)) |>
+    tibble(logodds = rnorm(mean = mean_logodds, sd = sd_logodds, n = 10000000)) |>
     mutate(probability = plogis(logodds))
   
   ggplot(df_normal_logodds, aes(probability)) +
@@ -274,16 +277,30 @@ illustrate_intercept_prior <- function(mean_prob, sd_logodds){
     scale_x_continuous(breaks = breaks_pretty(n = 10)) +
     xlab("Probability") +
     ylab("Density") +
-    ggtitle(paste0("Prevalence prior: \nnormal(M = qlogis(", mean_prob, "), SD = 1) log-odds distribution converted to probabilities"))
+    ggtitle(paste0("Prevalence prior: \nnormal(M = ", round_half_up(mean_logodds, 3), "), SD = ", sd_logodds, " on the log-odds scale, \ntransformed to probabilities"))
 }
 
 illustrate_intercept_prior(mean_prob = .70, sd_logodds = 1) # self reports of subjective experience
 illustrate_intercept_prior(mean_prob = .25, sd_logodds = 1) # direct behavioral measures
-illustrate_intercept_prior(mean_prob = .50, sd_logodds = 1.4) # all other modes, given our very weak beliefs and the potential for variation between subfields/journals 
+illustrate_intercept_prior(mean_prob = .50, sd_logodds = 1.45) # all other modes, given our very weak beliefs and the potential for variation between subfields/journals 
+
+plogis(-2.2)
+
+illustrate_intercept_prior(mean_prob = .25, sd_logodds = 1) 
+illustrate_intercept_prior(mean_prob = .25, sd_logodds = 1.2)
+illustrate_intercept_prior(mean_prob = .25, sd_logodds = 1.4) 
+illustrate_intercept_prior(mean_prob = .25, sd_logodds = 1.6)
+
+illustrate_intercept_prior(mean_prob = .1, sd_logodds = 1) 
+illustrate_intercept_prior(mean_prob = .1, sd_logodds = 1.2)
+illustrate_intercept_prior(mean_prob = .1, sd_logodds = 1.4) 
+illustrate_intercept_prior(mean_prob = .1, sd_logodds = 1.6)
 
 qlogis(.50)
 qlogis(.70)
 qlogis(.25)
+
+
 
 ```
 
@@ -373,6 +390,17 @@ formulas <-
   bf(formula = selfreportaboutsubjectivestate | weights(percent_of_all_articles) ~ 1 + year_centered + (1 + year_centered | p | subfield) + (1 + year_centered | q | subfield:journal)) +
   bf(formula = neurobiopsychophys | weights(percent_of_all_articles) ~             1 + year_centered + (1 + year_centered | p | subfield) + (1 + year_centered | q | subfield:journal)) +
   bf(formula = cognitiveability | weights(percent_of_all_articles) ~               1 + year_centered + (1 + year_centered | p | subfield) + (1 + year_centered | q | subfield:journal))
+
+# # it is very plausible that sampling at the journal level is so thin that estimating random slopes for each journal isn't feasible and causes convergence issues. In which case we'll drop the random slope at the journal level:
+# formulas <- 
+#   bf(formula = directbehavioral | weights(percent_of_all_articles) ~               1 + year_centered + (1 + year_centered | p | subfield) + (1 | q | subfield:journal)) +
+#   bf(formula = behavioralproxy | weights(percent_of_all_articles) ~                1 + year_centered + (1 + year_centered | p | subfield) + (1 | q | subfield:journal)) +
+#   bf(formula = selfreportsaboutbehavior | weights(percent_of_all_articles) ~       1 + year_centered + (1 + year_centered | p | subfield) + (1 | q | subfield:journal)) +
+#   bf(formula = selfreportaboutsubjectivestate | weights(percent_of_all_articles) ~ 1 + year_centered + (1 + year_centered | p | subfield) + (1 | q | subfield:journal)) +
+#   bf(formula = neurobiopsychophys | weights(percent_of_all_articles) ~             1 + year_centered + (1 + year_centered | p | subfield) + (1 | q | subfield:journal)) +
+#   bf(formula = cognitiveability | weights(percent_of_all_articles) ~               1 + year_centered + (1 + year_centered | p | subfield) + (1 | q | subfield:journal))
+
+# # if substantial convergence issues are still encountered, we will switch from modelling all the DVs in a single multivariate model to using separate univariate models for each DV
 
 # # it is plausible that a reviewer asks us for unweighted models for robustness, although it is harder to know how to interpret the field-wide prevalences and trends given meaningful differences in size of the subfields. nonetheless, I retain the code here.
 # formulas <- 
@@ -627,6 +655,59 @@ posterior_prevalence |>
 
 ```
 
+#### Plot field
+
+```{r fig.height=2, fig.width=8}
+
+temp <- posterior_prevalence |>
+  ungroup() |>
+  filter(outcome %in% c("Direct Behavioral", "Self-Report about Subjective States", "Neuro/Bio/Psychophys", "Cognitive Ability")) |>
+  mutate(outcome = case_when(outcome == "Direct Behavioral" ~ "Behavior",
+                             outcome == "Self-Report about Subjective States" ~ "Subjective experience",
+                             outcome == "Neuro/Bio/Psychophys" ~ "Neuro/Bio/Physiological",
+                             outcome == "Cognitive Ability" ~ "Cognitive Ability"))
+
+
+p_prevalence_field <- temp |>
+  filter(re_level != "journals") |>
+  filter(label == "Psychology (marginal)") |>
+  ggplot(aes(prevalence_estimate, outcome)) +
+  geom_rect(aes(xmin = 0.00, xmax = 0.05, ymin = -Inf, ymax = Inf, color = NULL),
+            fill = "grey65") +
+  geom_rect(aes(xmin = 0.05, xmax = 0.10, ymin = -Inf, ymax = Inf, color = NULL),
+            fill = "grey73") +
+  geom_rect(aes(xmin = 0.10, xmax = 0.25, ymin = -Inf, ymax = Inf, color = NULL),
+            fill = "grey80") +
+  geom_rect(aes(xmin = 0.25, xmax = 0.50, ymin = -Inf, ymax = Inf, color = NULL),
+            fill = "grey90") +
+  geom_rect(aes(xmin = 0.50, xmax = 1.00, ymin = -Inf, ymax = Inf, color = NULL),
+            fill = "grey95") +
+  annotate("text", x = 0.0250, y = "Neuro/Bio/Physiological", label = "Rare",       size = 4, color = "grey30", angle = 90) +
+  annotate("text", x = 0.0725, y = "Neuro/Bio/Physiological", label = "Uncommon",   size = 4, color = "grey40", angle = 90) +
+  annotate("text", x = 0.1750, y = "Neuro/Bio/Physiological", label = "Occasional", size = 4, color = "grey50", angle = 90) +
+  annotate("text", x = 0.3750, y = "Neuro/Bio/Physiological", label = "Common",     size = 4, color = "grey60", angle = 90) +
+  annotate("text", x = 0.7500, y = "Neuro/Bio/Physiological", label = "Frequent",   size = 4, color = "grey65", angle = 90) +
+  geom_linerangeh(aes(xmin = prevalence_ci_lower, xmax = prevalence_ci_upper), position = position_dodge(width = .7)) +
+  geom_point(position = position_dodge(width = .7)) +
+  coord_cartesian(xlim = c(0, 1)) +
+  theme_linedraw() + 
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        panel.spacing = unit(1, "lines")) +  # Increase spacing between facets  
+  ylab("") +
+  xlab("Articles\n(Marginal Global Mean)") +
+  #scale_x_continuous(labels = scales::label_percent(), breaks = c(0, 0.05, 0.1, 0.25, 0.5, 1)) +
+  scale_x_continuous(labels = c("0%", "5%", "10%", "25%", "50%", "75%", "100%"),
+                     breaks = c(0, 0.05, 0.10, 0.25, 0.50, 0.75, 1),
+                     minor_breaks = NULL,
+                     expand = c(0.01,0.01))  
+
+p_prevalence_field
+
+#quicksave("p_prevalence_subfields", 11, 6)
+
+```
+
 #### Plot field + subfields
 
 ```{r fig.height=6, fig.width=11}
@@ -860,6 +941,45 @@ posterior_trends |>
 
 ```
 
+#### Plot field 
+
+```{r fig.height=2, fig.width=8}
+
+# show_col(viridis::mako(25))
+# viridis::mako(25)
+
+temp2 <- posterior_trends |>
+  ungroup() |>
+  filter(outcome %in% c("Direct Behavioral", "Self-Report about Subjective States", "Neuro/Bio/Psychophys", "Cognitive Ability")) |>
+  mutate(outcome = case_when(outcome == "Direct Behavioral" ~ "Behavior",
+                             outcome == "Self-Report about Subjective States" ~ "Subjective experience",
+                             outcome == "Neuro/Bio/Psychophys" ~ "Neuro/Bio/Physiological",
+                             outcome == "Cognitive Ability" ~ "Cognitive Ability"))
+
+p_trend_field <- temp2 |>
+  filter(re_level != "journals") |>
+  filter(label == "Psychology (marginal)") |>
+  ggplot(aes(trend_estimate, outcome, color = trend_category)) +
+  geom_vline(xintercept = 0, linetype = "dotted") +
+  geom_vline(xintercept = 0, linetype = "dotted") +
+  geom_linerangeh(aes(xmin = trend_ci_lower, xmax = trend_ci_upper)) +
+  geom_point() +
+  #coord_cartesian(xlim = c(-.1, .1)) +
+  theme_linedraw() +
+  ylab("") +
+  xlab("Trend (change per year)") +
+  scale_x_continuous(labels = scales::label_percent(), breaks = breaks_pretty()) +
+  scale_color_manual(values = c("#38629DFF", "#2B1C35FF", "#359EAAFF")) +
+  theme(legend.position = "none")
+  # guides(color = guide_legend(title = "Trend",
+  #                             reverse = TRUE))
+
+p_trend_field
+
+#quicksave("p_trend_subfields", 11, 6)
+
+```
+
 #### Plot field + subfields
 
 ```{r fig.height=6, fig.width=11}
@@ -1029,18 +1149,63 @@ if(exists("models/posterior_prevalence_field_marginal_by_year.rds") &
 }
 
 # plot
-p_prevalence_and_trend_field_marginal <- ggplot() +
-  geom_ribbon(data = posterior_prevalence_field_marginal_by_year, aes(year, ymin = prevalence_ci_lower, ymax = prevalence_ci_upper), fill = "skyblue", alpha = 0.5) +
-  geom_smooth(data = posterior_prevalence_field_marginal_by_year, aes(year, prevalence_estimate),
-              method = "lm", color = "black", size = 0.75, se = FALSE) +
-  geom_point(data = data_summary_field, aes(year, proportion), size = 1) +
-  theme_linedraw() +
+# p_prevalence_and_trend_field_marginal <- ggplot() +
+#   geom_ribbon(data = posterior_prevalence_field_marginal_by_year, aes(year, ymin = prevalence_ci_lower, ymax = prevalence_ci_upper), fill = "skyblue", alpha = 0.5) +
+#   geom_smooth(data = posterior_prevalence_field_marginal_by_year, aes(year, prevalence_estimate),
+#               method = "lm", color = "black", size = 0.75, se = FALSE) +
+#   geom_point(data = data_summary_field, aes(year, proportion), size = 1) +
+#   theme_linedraw() +
+#   scale_x_continuous(breaks = c(2010, 2012, 2014, 2016, 2018, 2020, 2022)) +
+#   coord_cartesian(ylim = c(0,1)) +
+#   scale_y_continuous(labels = scales::label_percent()) + # , breaks = c(0, 0.05, 0.1, 0.25, 0.5, 1)
+#   ylab("Prevalence\n(Marginal Global Mean)") +
+#   xlab("Year") +
+#   facet_wrap( ~ outcome, ncol = 2)
+
+# posterior_prevalence_field_marginal_by_year_logit <-
+#   posterior_prevalence_field_marginal_by_year |>
+#   mutate(
+#     logit_estimate = qlogis(prevalence_estimate),
+#     logit_lower    = qlogis(prevalence_ci_lower),
+#     logit_upper    = qlogis(prevalence_ci_upper)
+#   )
+# 
+# p_prevalence_and_trend_field_marginal <- ggplot(posterior_prevalence_field_marginal_by_year_logit,
+#        aes(year, logit_estimate)) +
+#   geom_ribbon(aes(ymin = logit_lower, ymax = logit_upper), alpha = 0.5) +
+#   geom_line() +
+#   #scale_x_continuous(breaks = c(2010, 2012, 2014, 2016, 2018, 2020, 2022)) +
+#   #coord_cartesian(ylim = c(0,1)) +
+#   scale_y_continuous(labels = scales::label_percent()) + # , breaks = c(0, 0.05, 0.1, 0.25, 0.5, 1)
+#   ylab("Prevalence\n(Marginal Global Mean)") +
+#   xlab("Year") +
+#   theme_linedraw() +
+#   facet_wrap( ~ outcome, ncol = 2)
+# 
+# p_prevalence_and_trend_field_marginal
+
+posterior_prevalence_field_marginal_by_year_prob <-
+  posterior_prevalence_field_marginal_by_year_logit |>
+  dplyr::mutate(
+    prevalence_estimate  = plogis(logit_estimate),
+    prevalence_ci_lower  = plogis(logit_lower),
+    prevalence_ci_upper  = plogis(logit_upper)
+  )
+
+p_prevalence_and_trend_field_marginal <-
+  ggplot(posterior_prevalence_field_marginal_by_year_prob,
+         aes(x = year, y = prevalence_estimate)) +
+  geom_ribbon(aes(ymin = prevalence_ci_lower,
+                  ymax = prevalence_ci_upper),
+              alpha = 0.5) +
+  geom_line() +
   scale_x_continuous(breaks = c(2010, 2012, 2014, 2016, 2018, 2020, 2022)) +
-  coord_cartesian(ylim = c(0,1)) +
-  scale_y_continuous(labels = scales::label_percent()) + # , breaks = c(0, 0.05, 0.1, 0.25, 0.5, 1)
+  coord_cartesian(ylim = c(0, 1)) +
+  scale_y_continuous(labels = scales::label_percent()) +
   ylab("Prevalence\n(Marginal Global Mean)") +
   xlab("Year") +
-  facet_wrap( ~ outcome, ncol = 2)
+  theme_linedraw() +
+  facet_wrap(~ outcome, ncol = 2)
 
 p_prevalence_and_trend_field_marginal
 
@@ -1063,6 +1228,55 @@ p_prevalence_and_trend_field_conditional <- ggplot() +
 p_prevalence_and_trend_field_conditional
 
 quicksave("p_prevalence_and_trend_field_conditional", 9, 8)
+
+```
+
+#### Temp
+
+```{r fig.height=6, fig.width=8}
+
+posterior_prevalence_field_marginal_by_year_prob <-
+  posterior_prevalence_field_marginal_by_year_logit |>
+  dplyr::mutate(
+    prevalence_estimate  = plogis(logit_estimate),
+    prevalence_ci_lower  = plogis(logit_lower),
+    prevalence_ci_upper  = plogis(logit_upper)
+  )
+
+temp <- posterior_prevalence_field_marginal_by_year_prob |>
+  filter(outcome %in% c("Direct Behavioral", "Self-Report about Subjective States", "Neuro/Bio/Psychophys", "Cognitive Ability")) |>
+  mutate(outcome = case_when(outcome == "Direct Behavioral" ~ "Behavior",
+                             outcome == "Self-Report about Subjective States" ~ "Subjective experience",
+                             outcome == "Neuro/Bio/Psychophys" ~ "Neuro/Bio/Physiological",
+                             outcome == "Cognitive Ability" ~ "Cognitive Ability"),
+         outcome = fct_rev(outcome))
+
+ggplot(temp,
+       aes(x = year, y = prevalence_estimate)) +
+  geom_ribbon(aes(ymin = prevalence_ci_lower,
+                  ymax = prevalence_ci_upper),
+              alpha = 0.5) +
+  geom_line() +
+  scale_x_continuous(breaks = c(2010, 2012, 2014, 2016, 2018, 2020, 2022)) +
+  coord_cartesian(ylim = c(0, 1)) +
+  scale_y_continuous(labels = scales::label_percent()) +
+  ylab("Articles\n(Marginal Global Mean)") +
+  xlab("Year") +
+  theme_linedraw() +
+  facet_wrap(~ outcome, ncol = 2)
+
+ggplot(temp,
+       aes(x = year, y = prevalence_estimate, fill = outcome)) +
+  geom_ribbon(aes(ymin = prevalence_ci_lower,
+                  ymax = prevalence_ci_upper),
+              alpha = 0.2) +
+  geom_line(aes(color = outcome)) +
+  scale_x_continuous(breaks = c(2010, 2012, 2014, 2016, 2018, 2020, 2022)) +
+  coord_cartesian(ylim = c(0, 1)) +
+  scale_y_continuous(labels = scales::label_percent()) +
+  ylab("Articles\n(Marginal Global Mean)") +
+  xlab("Year") +
+  theme_linedraw() 
 
 ```
 
