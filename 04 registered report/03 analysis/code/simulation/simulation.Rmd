@@ -1,0 +1,202 @@
+---
+title: "Measurement trends in psychology"
+subtitle: "Simulation study for priors"
+author: "Ian Hussey"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: hide
+    highlight: haddock
+    theme: flatly
+    toc: yes
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(message = FALSE, 
+                      warning = FALSE)
+
+```
+
+```{r}
+
+library(brms)
+library(tidyverse)
+library(furrr)
+
+```
+
+# Simulation
+
+```{r}
+
+# generate data
+generate_data <- function(n, p_true, seed = NULL) {
+  if (!is.null(seed)) set.seed(seed)
+  tibble(
+    y = rbinom(n = n, size = 1, prob = p_true)
+  )
+}
+
+# fit base model to dummy data with dummy prior
+# so that brms does not have to recompile model each iteration
+dummy_dat <- generate_data(n = 10, p_true = 0.3, seed = 1)
+
+fit_logit_base <- function(dat, prior_mu_probability, prior_sigma_logodds) {
+  # 1. Compute numeric mean and sd on log-odds scale
+  mu    <- qlogis(prior_mu_probability)   # numeric
+  sigma <- prior_sigma_logodds           # already on log-odds scale
+
+  # 2. Build prior string for Stan
+  prior_str <- sprintf("normal(%0.10f, %0.10f)", mu, sigma)
+  
+  brm(
+    formula       = bf(y ~ 1),
+    family        = bernoulli(link = "logit"),
+    data          = dat,
+    prior         = prior_string(prior_str, class = "Intercept"),
+    sample_prior  = "no",
+    iter          = 2000,
+    chains        = 1, # for parallelisation, done within furrr::future_map instead of here
+    cores         = 4,
+    refresh       = 0
+  )
+}
+
+fitted_base <- fit_logit_base(dat = dummy_dat,
+                              prior_mu_probability = 0.1, 
+                              prior_sigma_logodds = 1.4)
+
+
+# analysis function
+fit_logit_update <- function(dat, prior_mu_probability, prior_sigma_logodds) {
+  # 1. Compute numeric mean and sd on log-odds scale
+  mu    <- qlogis(prior_mu_probability)   # numeric
+  sigma <- prior_sigma_logodds           # already on log-odds scale
+
+  # 2. Build prior string for Stan
+  prior_str <- sprintf("normal(%0.10f, %0.10f)", mu, sigma)
+  
+  update(
+    object       = fitted_base,
+    newdata      = dat,
+    prior         = prior_string(prior_str, class = "Intercept"),
+    sample_prior = "no",
+    iter         = 2000,
+    chains       = 4,
+    cores        = 1, # for parallelisation, done within furrr::future_map instead of here
+    refresh      = 0,
+    recompile    = FALSE
+  )
+}
+
+# summarize function
+summarise_fit <- function(fit) {
+  draws <- as_draws_df(fit)
+  p     <- plogis(draws$b_Intercept)
+
+  tibble(
+    p_post_mean   = mean(p),
+    p_post_median = median(p),
+    p_post_lower  = quantile(p, 0.025),
+    p_post_upper  = quantile(p, 0.975)
+  )
+}
+
+# experiment conditions
+design <- tidyr::expand_grid(
+  rep        = 1:1000,                       # Monte Carlo replications
+  n          = 450,                         # sample sizes
+  p_true     = c(0.02, 0.10, 0.75),         # true probabilities (DGP)
+  prior_mu_probability = c(.25, .75),       # centre of prior on prob scale
+  prior_sigma_logodds = c(1, 1.1, 1.4)      # SD on logit scale
+)
+
+
+# safe versions of functions
+safe_fit_logit <- purrr::possibly(fit_logit_update, otherwise = NULL)
+safe_summarise_fit <- purrr::possibly(summarise_fit, otherwise = NULL)
+
+
+# run simulation
+plan(multisession, workers = 32)
+
+set.seed(42)
+
+results <- design %>%
+  mutate(data = furrr::future_pmap(.l = list(n = n, 
+                                             p_true = p_true, 
+                                             seed = rep), # use rep as seed for reproducibility
+                                   .f = generate_data,
+                                   .options = furrr_options(seed = TRUE))) |>  
+  # fit model under the corresponding prior
+  mutate(fit  = furrr::future_pmap(.l = list(dat = data, 
+                                             prior_mu_probability = prior_mu_probability, 
+                                             prior_sigma_logodds = prior_sigma_logodds),
+                                   .f = safe_fit_logit,
+                                   .options = furrr_options(seed = TRUE))) |>
+  mutate(post_summary = furrr::future_map(fit, safe_summarise_fit,
+                                          .options = furrr_options(seed = TRUE)))
+
+write_rds(results, "results.rds")
+
+results |>
+  select(rep, n, p_true, prior_mu_probability, prior_sigma_logodds, post_summary) |>
+  write_rds("results_only.rds")
+
+```
+
+```{r}
+
+results_only <- read_rds("results_only.rds")
+
+# summarize results
+results_summary <- results_only |>
+  unnest(post_summary)
+
+results_summary |>
+  group_by(n, p_true, prior_mu_probability, prior_sigma_logodds) |>
+  summarize(mean_ppost_mean = mean(p_post_mean),
+            sd_ppost_mean = mean(p_post_mean)) |>
+  ggplot(aes(p_true, mean_ppost_mean)) +
+  geom_linerange(aes(ymin = mean_ppost_mean-prior_sigma_logodds, ymax = mean_ppost_mean+prior_sigma_logodds)) +
+  geom_point() + 
+  geom_abline(slope = 1, intercept = 0, linetype = "dotted") +
+  facet_grid(prior_mu_probability ~ prior_sigma_logodds)
+
+ggsave("results_summary.pdf", width = 6, height = 4)
+
+```
+
+
+```{r fig.height=8, fig.width=10}
+
+results_summary |>
+  group_by(p_true, prior_mu_probability, prior_sigma_logodds) |>
+  arrange(p_post_mean) |>
+  mutate(id = row_number()) |>
+  ungroup() |>
+  ggplot(aes(p_post_mean, id)) +
+  geom_point() +
+  ggstance::geom_linerangeh(aes(xmin = p_post_lower, xmax = p_post_upper)) +
+  geom_vline(aes(xintercept = p_true), color = "red") +
+  facet_grid(prior_sigma_logodds ~ prior_mu_probability)
+
+results_summary |>
+  mutate(covered = dplyr::between(p_true, p_post_lower, p_post_upper)) |>
+  group_by(p_true, prior_mu_probability, prior_sigma_logodds) |>
+  summarize(coverage = mean(covered)) |>
+  arrange(coverage)
+
+```
+
+# Session info
+
+```{r}
+
+sessionInfo()
+
+```
+
+
