@@ -32,9 +32,10 @@ library(kableExtra)
 # --- User configuration ---
 
 # Email for polite API access (Crossref polite pool + Unpaywall)
-email <- "your.name@unibe.ch"  # TODO: set your institutional email
+email <- "ian.hussey@unibe.ch"  # TODO: set your institutional email
 
-# API keys (loaded from .Renviron — see .Renviron.example)
+# API keys (loaded from .Renviron)
+readRenviron("../../../.Renviron")
 elsevier_api_key <- Sys.getenv("ELSEVIER_API_KEY", unset = "")
 wiley_tdm_token  <- Sys.getenv("WILEY_TDM_TOKEN", unset = "")
 
